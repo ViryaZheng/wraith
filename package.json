@@ -1,0 +1,31 @@
+{
+  "name": "pi-cybersec",
+  "version": "1.0.0",
+  "description": "Cybersecurity toolkit extension for pi coding agent — vulnerability assessment, penetration testing, incident response, threat hunting, malware analysis, cloud security audit, compliance audit, security hardening, detection engineering, and forensic analysis",
+  "keywords": [
+    "pi-package",
+    "cybersecurity",
+    "security",
+    "pentest",
+    "vulnerability",
+    "incident-response",
+    "threat-hunting",
+    "malware-analysis",
+    "forensics",
+    "compliance"
+  ],
+  "license": "MIT",
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "typebox": "*"
+  }
+}
