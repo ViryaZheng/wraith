@@ -1,29 +1,49 @@
 # pi-cybersec 🛡️
 
-Cybersecurity toolkit extension for [pi coding agent](https://pi.dev) — 10 professional security tools covering the full security lifecycle.
+Cybersecurity toolkit extension for [pi coding agent](https://pi.dev) — 10 function-calling tools powered by the [Anthropic Cybersecurity Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills) library (817 skills, Apache 2.0).
+
+## How it works
+
+Each of the 10 tools is a **function-calling entry point** that:
+
+1. Takes structured parameters (target, scope, phase, etc.)
+2. Searches the 817-skill library for the best-matching SKILL.md
+3. Returns the full skill workflow — including **real tool commands** (Nessus, Volatility, Burp Suite, BloodHound, etc.)
+4. The model then executes the workflow using bash and other tools
+
+> **No stubs.** Every tool returns production-grade guidance from the skills library.
 
 ## Tools
 
-| Tool | Description | Frameworks |
-|------|-------------|------------|
-| `vulnerability_assessment` | CVE 扫描、OWASP Top 10、依赖审计、CVSS 评分 | OWASP, CWE, NIST, CIS |
-| `penetration_test` | 体系化渗透测试 (recon → exploitation → cleanup) | PTES, MITRE ATT&CK, OWASP |
-| `incident_response` | 安全事件响应 (detection → containment → recovery) | NIST IR |
-| `threat_hunt` | 主动威胁狩猎，基于假设驱动和 IOC 搜索 | MITRE ATT&CK |
-| `malware_analysis` | 恶意软件分析 (static/dynamic/reverse engineering) | — |
-| `cloud_security_audit` | 云安全审计 (IAM, storage, network, K8s) | CIS, NIST, SOC2, PCI DSS |
-| `compliance_audit` | 合规审计 (ISO 27001, SOC 2, PCI DSS, HIPAA, GDPR) | ISO, NIST CSF, CMMC |
-| `security_hardening` | 系统安全加固 (OS, container, network, AD) | CIS Benchmark, STIG |
-| `detection_engineering` | 检测规则构建 (Sigma, YARA, SIEM queries) | MITRE ATT&CK |
-| `forensic_analysis` | 数字取证 (disk, memory, network, timeline) | — |
+| Tool | Maps to skills like... |
+|------|----------------------|
+| `vulnerability_assessment` | `performing-vulnerability-scanning-with-nessus`, `scanning-docker-images-with-trivy`, `performing-web-application-scanning-with-nikto` |
+| `penetration_test` | `performing-web-application-penetration-test`, `conducting-internal-network-penetration-test`, `exploiting-vulnerabilities-with-metasploit-framework` |
+| `incident_response` | `performing-ransomware-response`, `investigating-phishing-email-incident`, `conducting-cloud-incident-response` |
+| `threat_hunt` | `hunting-for-cobalt-strike-beacons`, `hunting-for-lateral-movement-via-wmi`, `performing-threat-hunting-with-elastic-siem` |
+| `malware_analysis` | `analyzing-memory-dumps-with-volatility`, `reverse-engineering-malware-with-ghidra`, `performing-automated-malware-analysis-with-cape` |
+| `cloud_security_audit` | `auditing-aws-s3-bucket-permissions`, `performing-gcp-security-assessment-with-forseti`, `auditing-kubernetes-cluster-rbac` |
+| `compliance_audit` | `implementing-iso-27001-information-security-management`, `performing-soc2-type2-audit-preparation`, `performing-nist-csf-maturity-assessment` |
+| `security_hardening` | `hardening-linux-endpoint-with-cis-benchmark`, `hardening-docker-containers-for-production`, `configuring-ldap-security-hardening` |
+| `detection_engineering` | `building-detection-rules-with-sigma`, `performing-yara-rule-development-for-detection`, `implementing-siem-use-cases-for-detection` |
+| `forensic_analysis` | `performing-memory-forensics-with-volatility3`, `performing-disk-forensics-investigation`, `analyzing-windows-registry-for-artifacts` |
 
-## Install
+## Prerequisites
 
-### From npm (once published)
+Install the skills library:
 
 ```bash
-pi install npm:pi-cybersec
+git clone https://github.com/mukul975/Anthropic-Cybersecurity-Skills \
+  ~/.pi/agent/cybersec-skills
 ```
+
+Or set a custom path:
+
+```bash
+export CYBERSEC_SKILLS_PATH=/your/custom/path/skills
+```
+
+## Install
 
 ### From GitHub
 
@@ -46,7 +66,7 @@ pi -e ./pi-cybersec/extensions/cybersec.ts
 
 ## Usage
 
-Once installed, the 10 tools are available to the LLM automatically. You can also invoke them explicitly:
+Once installed, the 10 tools are available to the LLM automatically:
 
 ```
 Run a vulnerability assessment on example.com for web_app and api scopes
@@ -60,46 +80,36 @@ Execute a penetration test against 192.168.1.0/24, starting with recon phase
 Analyze the malware sample at /samples/suspicious.exe with full analysis
 ```
 
-## ⚠️ Current Status: Stub Implementation
+### Commands
 
-This package currently provides **tool schemas and workflow guidance** — the LLM receives structured tool definitions with detailed workflow steps. The actual execution backends (scanners, exploit frameworks, sandboxes, etc.) need to be integrated.
+| Command | Description |
+|---------|-------------|
+| `/cybersec-list [keyword]` | List available skills, optionally filtered by keyword |
 
-### Making tools functional
-
-Each tool's `execute()` function is a stub. To make a tool functional, replace the stub with real integration code. For example:
-
-```typescript
-// vulnerability_assessment — integrate with Trivy
-async execute(_toolCallId, params, _signal, onUpdate, _ctx) {
-  onUpdate?.({ content: [{ type: "text", text: "Scanning with Trivy..." }] });
-  const result = await execAsync(`trivy fs --severity ${params.severity} ${params.target}`);
-  return {
-    content: [{ type: "text", text: result.stdout }],
-    details: { scanResult: result },
-  };
-}
-```
-
-## Package Structure
+## Architecture
 
 ```
-pi-cybersec/
-├── package.json          # pi package manifest
-├── extensions/
-│   └── cybersec.ts       # Main extension (all 10 tools)
-├── LICENSE               # MIT
-└── README.md
+User prompt
+    │
+    ▼
+LLM decides to call vulnerability_assessment(target, scope)
+    │
+    ▼
+pi-cybersec tool handler
+    │
+    ├─► Searches ~/.pi/agent/cybersec-skills/skills/
+    │   for best-matching SKILL.md
+    │
+    ├─► Loads and returns full skill workflow
+    │   (with real commands for Nessus, Nmap, etc.)
+    │
+    ▼
+LLM reads the workflow and executes
+commands via bash tool
 ```
-
-## Contributing
-
-Contributions welcome! Areas to help:
-
-1. **Implement tool backends** — integrate real security tools
-2. **Add more tools** — extend the toolkit
-3. **Improve workflows** — refine the step-by-step guidance
-4. **Add tests** — validate tool schemas and outputs
 
 ## License
 
-MIT
+MIT — Extension code
+
+The skills library is [Apache 2.0](https://github.com/mukul975/Anthropic-Cybersecurity-Skills) licensed by its authors.
