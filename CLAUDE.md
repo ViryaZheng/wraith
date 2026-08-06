@@ -1,80 +1,75 @@
 # Wraith + Aegis
 
-双网安 agent 包，跑在 [pi](https://pi.dev) 上：🔴 **Wraith**（红队/进攻）+ 🔵 **Aegis**（蓝队/防守）。**两个物理独立、各自自包含的 agent**，共享同一份离线技能库。普通 `pi` 保持纯净。
+两个**物理独立、各自自包含的 pi 网安 agent 产品**,配一个一键安装器:🔴 **Wraith**(红队/进攻)+ 🔵 **Aegis**(蓝队/防守)。普通 `pi` 保持纯净。项目在 `~/Wraith`。
 
-> 私有仓库：https://github.com/ViryaZheng/wraith ｜ 版本：**v0.2.0**
+> 私有仓库：https://github.com/ViryaZheng/wraith ｜ 版本：**v0.3.0**
+> 产品定位对标 [oh-my-pi](https://github.com/can1357/oh-my-pi)（can1357 的 pi 增强分叉）——**仅作质量标杆,不占用其品牌**。底座仍是 plain pi。
 
 ## PROGRESS
 
-**Current**（2026-08-06，v0.2.0）：**已从"共享引擎"物理拆成两套独立代码并全部功能验证通过**。`engine/wraith.ts` 已删除；`wraith/index.ts` 和 `aegis/index.ts` 现在各是一份完整、自包含的 pi 扩展（`export default function(pi)`），互不 import，可独立演进。本次四项升级全部落地：
-- ①**工具描述全英文化 + 扩红队工具**：红队从 3 个扩到 **7 个**（新增 `exploit_development` / `password_attack` / `c2_operations` / `social_engineering`）；蓝队 8 个。所有 `description`/`promptGuidelines`/参数说明改英文。
-- ②**轻量语义检索**：每个文件内置离线 `SYNONYMS` 同义词表（creds→credential/hash…、dc→domain-controller/ad…），在 `SkillIndex.search()` 里按降权展开；新增 `/find <自然语言>` 语义搜命令。**不上 embedding，保持离线自包含**。
-- ③**长程任务状态 / 证据链**：`State{target,phase,evidence,loot/iocs}` 持久化到工作目录 `.wraith.json` / `.aegis.json`，**重启可续**；每轮通过 `before_agent_start` 把 memory digest 注入系统提示（PentestGPT PTT 思路）。命令 `/log` `/evidence` `/reset`。
-- ④**各自专属能力**：红队 `/loot`（战利品台账：缴获的 cred/host/shell），蓝队 `/ioc`（IOC 台账）。
+**Current**（2026-08-06，v0.3.0）：在 v0.2.0（物理拆两独立体 + 四项能力升级）基础上做了**代码清爽化 + 一键安装器**，两个产品都功能验证通过：
+- **代码清爽化**：每个产品从 ~900 行单文件拆成**三个专注文件**（各自独立、零共享）：`index.ts`(身份+记忆+命令) / `tools.ts`(工具+关键词映射+同义词+队伍过滤) / `skill-index.ts`(通用检索引擎)。`skill-index.ts` 两份内容相同但各存一份（保物理独立）。
+- **命令精简**：`/list` 并入 `/arsenal`（无参=当前阶段技能、有参=子串搜；`/find`=语义搜）。命令 12→**11**。
+- **工具文案精简**：删冗余 `promptGuidelines`；**保留 `description` + `promptSnippet`**——查过 pi 源码，`promptSnippet` 决定工具在系统提示 "Available tools" 里的可见性，删了模型会看不见工具。
+- **一键安装器**：`install.sh` 做成对标 oh-my-pi 那种精致度——品牌 banner、彩色输出、可 `curl \| sh` 远程自 clone、装两个独立产品、保持 pi 纯净。
 
-验证方式：用 pi 内置 jiti 按相同方式加载两个扩展 + mock `pi` 跑功能测试——红 7 工具、蓝 8 工具全部命中真实且相关的技能，`/find`、`/loot`、`/ioc`、证据链均通过。技能分流：**红 447 + 蓝 370 = 817**。
+关键定调（用户反复强调，避免再跑偏）：
+- **两个独立 agent = 两个独立产品，零共享代码**；明确**否掉**"抽共享 core/ 框架"。
+- oh-my-pi 是 can1357 的真实项目，用户**只拿它当质量标杆**（"参考"），**不改名、不占用其品牌**，底座不换（仍 plain pi）。曾一度把包名/门面误改成 "Oh My Pi"，已全部回退成 Wraith/Aegis。
 
-**Next**（后续可选）：
-- 误报验证仍靠人工把关（全行业通病）。
-- 同义词表是手工小表（红/蓝各约 20 条）；若要更强可扩条目，仍无需联网。
-- `/loot` `/ioc` 目前是纯文本条目；如需结构化（区分 host/cred/hash）可加类型字段，但会变复杂——非必要不做。
+**Next**（后续可选，别加复杂度）：
+- 仓库私有，`curl \| sh` 一键装对外人不可用；要真正对外一键装需把仓库转公开。
+- 加第三个 agent：复制一个三文件文件夹改内容，再在 `install.sh` 的 `for pair` 循环 + shell 函数各加一行。
 
 **Known outstanding**：
 - 独立配置目录的 `auth.json` 靠软链共享 `~/.pi/agent/auth.json`；新机器必须先登录过 pi，否则软链断。
-- `package.json` 的 `version` 已改 `0.2.0`（历史上曾写 3.0.0，属旧内部号，已纠正为对齐产品版本）。
+- `~/.zshrc` 里可能残留旧版 shell 块；install.sh 会 warn 提醒删旧块（重复定义时 bash 取后者，功能不受影响）。新块 marker 是 `# ── Wraith + Aegis ──`。
 
 ## Architecture
 
 ```
-~/Wraith/
-├── wraith/index.ts      🔴 红队：完整独立 agent（7 工具 + 红人设 + 9 阶段杀伤链 + 447 技能 + loot 台账）
-├── aegis/index.ts       🔵 蓝队：完整独立 agent（8 工具 + 蓝人设 + 8 阶段防御链 + 370 技能 + ioc 台账）
-├── cybersec-skills/skills/   817 个 SKILL.md（vendored，离线自包含，Apache 2.0，两 agent 共用只读库）
-├── themes/matrix.json   🔴 绿   ·   themes/aegis.json 🔵 冰蓝
-├── install.sh           建独立配置、软链主题、写 shell 命令
-├── README.md            GitHub 门面（面向用户）
-└── CLAUDE.md            本文件（面向接手/开发）
+~/Wraith/  (仓库，装两个独立 agent 产品)
+├── wraith/               🔴 红队产品（完整独立）
+│   ├── index.ts          ·  身份/人设/9阶段杀伤链 + 持久记忆(证据链+loot台账) + 命令 + 注册
+│   ├── tools.ts          ·  7 个进攻工具 + 枚举 + 关键词映射 + 红队 SYNONYMS + teamFilter
+│   └── skill-index.ts    ·  通用检索引擎(SkillIndex 倒排+同义词展开 / tokenize / w / registerSkillTool)
+├── aegis/                🔵 蓝队产品（同样三文件结构，8 工具 + ioc 台账 + 蓝队词表/过滤）
+├── cybersec-skills/skills/   817 个 SKILL.md（vendored，离线，两产品只读共用）
+├── themes/               matrix.json(🔴) · aegis.json(🔵)
+├── install.sh            一键安装器（彩色 banner / 远程自 clone / 独立配置）
+├── README.md             GitHub 门面（Wraith + Aegis 品牌）
+└── CLAUDE.md             本文件
 ```
 
-每个 `index.ts` 内部结构（红蓝同构，只是内容不同）：Identity 常量（NAME/THEME/BANNER/PERSONA/PHASES）→ 队伍 skill 过滤（`BLUE_SUBDOMAINS` + red/blueFilter）→ `SYNONYMS` 语义表 → `SkillIndex`（倒排索引 + 同义词展开搜索）→ 工具工厂（`registerSkillTool`）→ 各工具枚举/关键词映射/`buildKeywords` → 持久化 memory（`State` + load/save + `memoryDigest`）→ `export default function(pi)` 注册工具 + 人设注入 + 命令。
-
-- **主线**：红 9 阶段 RECON→ACCESS→EXECUTE→PERSIST→ESCALATE→CREDS→LATERAL→IMPACT→REPORT（对齐 MITRE）；蓝 8 阶段 DETECT→TRIAGE→HUNT→INVESTIGATE→CONTAIN→ERADICATE→HARDEN→REPORT。`/engage`→`/next` 一阶段一停。
-- **工具分队**：红纯进攻、蓝纯防御，`cloud_security_audit` 两边都有（红看攻击路径 / 蓝看配置姿态）。
-- **技能库定位**：`__dirname` 找 `../cybersec-skills/skills`，回退 `~/.pi/agent/cybersec-skills`。
+- **三文件协作**：`index.ts` 从 `./skill-index` 拿引擎、从 `./tools` 拿 `TOOLS`/`SYNONYMS`/`teamFilter`，构造 `new SkillIndex(SKILLS_PATH, teamFilter, SYNONYMS)`，注册工具 + 人设注入 + 命令。`tools.ts` 依赖 `./skill-index` 的 `w`/`W_*`/类型。两个 agent 的 `skill-index.ts` 内容一致但各存一份（独立）。
+- **主线**：红 9 阶段 RECON→…→REPORT（对齐 MITRE）；蓝 8 阶段 DETECT→…→REPORT。`/engage`→`/next` 一阶段一停。
+- **技能库定位**：`skill-index.ts` 用 `__dirname` 找 `../cybersec-skills/skills`，回退 `~/.pi/agent/cybersec-skills`。
 
 ## Run
 
 ```bash
 cd ~/Wraith && ./install.sh    # 建独立配置、软链主题、写 wraith/aegis 命令
 source ~/.zshrc
-wraith    # 🔴 红队（绿）
-aegis     # 🔵 蓝队（蓝）
-pi        # ⚪ 普通 pi，未改动
+wraith    # 🔴 红队（绿）      aegis  # 🔵 蓝队（蓝）      pi  # ⚪ 普通 pi，未改动
+git -C ~/Wraith pull           # 更新
 ```
 
-进 agent 后：`/engage <目标>` 开局 → `/next` 逐阶段推进 → `/report`。记忆：`/log <发现>`、`/loot`(红)/`/ioc`(蓝)、`/evidence`、`/reset`。技能：`/find <自然语言>`（语义搜）、`/arsenal <词>`、`/list`、`/phases`、`/help`。
+进 agent 后：`/engage <目标>`→`/next`→`/report`；记忆 `/log` `/loot`(红)|`/ioc`(蓝) `/evidence` `/reset`；技能 `/find <自然语言>` `/arsenal [词]`；`/help` `/phases`。
 
-**改代码后离线验证**（无需真跑 pi，无需消耗 API）：
-```bash
-cd ~/Wraith
-ln -sfn "$(pi_bundled_node_modules)" node_modules   # 见下方 Handoff 的绝对路径
-# 用 jiti 加载 wraith/index.ts 与 aegis/index.ts，mock 一个 pi 对象，调用 tool.execute / command.handler
-rm node_modules
-```
+**改代码后离线验证**（不真跑 pi、不耗 API）：软链 pi 内置 node_modules 进 `~/Wraith/node_modules`，用 jiti 加载 `<agent>/index.ts` + mock 一个 `pi` 对象调 `tool.execute`/`command.handler`。内置 modules 路径见 Handoff。
 
 ## Known Limits
 
-- 工具返回的是"工作流文本 + 真实命令"，真正执行靠 agent 用 bash——需人在场、给授权目标。
+- 工具返回"工作流文本 + 真实命令"，真正执行靠 agent 用 bash——需人在场、给授权目标。
 - 效果依赖底层模型（当前 deepseek-v4-flash）。
-- 红蓝独立命令/独立配置/独立状态文件，本就不该同时跑同一目录（会各写各的 `.wraith.json`/`.aegis.json`，互不冲突）。
-- `--theme` 只加载不激活；header 主题靠各配置目录 `settings.theme`，agent 内容再由 `ctx.ui.setTheme` 兜底。
+- 两产品各写各的 `.wraith.json` / `.aegis.json`（在启动目录），互不冲突，已进 `.gitignore`。
 
 ## Handoff
 
-- **改某一个 agent**：只动它自己的 `index.ts`，另一个完全不受影响（这就是物理拆分的意义）。名字/颜色/人设/主线全在文件顶部的常量区；工具在 `export default` 里的 `tools` 数组；语义词在 `SYNONYMS`；队伍 skill 过滤在 `BLUE_SUBDOMAINS` + `red/blueFilter`。
-- **持久状态文件**：`.wraith.json` / `.aegis.json` 写在**启动 agent 时的工作目录**（= 用户的交战目录），已加进 `.gitignore`。
-- **两个 shell 命令**在 `~/.zshrc`；两个独立配置在 `~/.pi-wraith` / `~/.pi-aegis`（各 `settings.json` 的 theme + 软链 auth/models）。
-- **认证**：deepseek key 在 `~/.pi/agent/auth.json`，两个独立配置软链它。
-- **pi 内置 node_modules（离线验证用）**：`/opt/homebrew/Cellar/pi-coding-agent/<版本>/libexec/lib/node_modules/@earendil-works/pi-coding-agent/node_modules`（含 jiti/typebox/pi-ai，软链进 `~/Wraith/node_modules` 即可让 jiti 解析导入）。
-- **pi 扩展文档**（本机）：同上 Cellar 目录下的 `docs/`（extensions.md / themes.md / packages.md）。
-- 搬新机器/Kali：拷 `~/Wraith` 整个文件夹 → `./install.sh`（技能库已自带，Kali 上 nmap/sqlmap 等系统自带）。
+- **改某个产品**：只动它自己的文件夹三文件，另一个完全不受影响。人设/主线在 `index.ts` 顶部常量；工具在 `tools.ts` 的 `TOOLS`；语义词在 `tools.ts` 的 `SYNONYMS`；队伍 skill 过滤在 `tools.ts` 的 `BLUE_SUBDOMAINS` + `teamFilter`。
+- **加新工具**：往 `tools.ts` 的 `TOOLS` 加一项（`name/label/description/promptSnippet/parameters/buildKeywords`）+ 对应 `buildKeywords` 和关键词映射。**必须给 `promptSnippet`**，否则模型看不见该工具。
+- **持久状态**：`.wraith.json`/`.aegis.json` 写在**启动 agent 的工作目录**。
+- **shell / 配置**：`~/.zshrc` 的 `# ── Wraith + Aegis ──` 块定义 `wraith`/`aegis` + `WRAITH_HOME`；独立配置在 `~/.pi-wraith` / `~/.pi-aegis`。
+- **认证**：deepseek key 在 `~/.pi/agent/auth.json`，两独立配置软链它。
+- **pi 内置 node_modules（离线验证用）**：`/opt/homebrew/Cellar/pi-coding-agent/<版本>/libexec/lib/node_modules/@earendil-works/pi-coding-agent/node_modules`（含 jiti/typebox/pi-ai）。
+- 搬新机器/Kali：`curl \| sh` 远程装（需仓库可访问），或拷 `~/Wraith` 整个文件夹跑 `./install.sh`。

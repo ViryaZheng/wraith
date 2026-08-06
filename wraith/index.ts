@@ -1,27 +1,19 @@
 /**
- * 🔴 WRAITH — autonomous red-team / offensive-security agent (a self-contained pi extension).
+ * 🔴 WRAITH — autonomous red-team / offensive-security agent (self-contained pi extension).
  *
- * This folder is ONE independent agent. It shares NO code with Aegis (blue team) — the two
- * were physically split so each can evolve on its own. Everything Wraith needs lives here:
- *   - Persona: senior offensive operator, injected into the system prompt every turn.
- *   - Tools: 7 offensive function-calling tools, each backed by the 817-skill workflow library
- *     (Nmap, Burp, sqlmap, Metasploit, BloodHound, mimikatz, Sliver, gophish, ...).
- *   - Skill retrieval: tokenized inverted index + weighted search + a lightweight synonym layer.
- *   - Engagement memory: a persisted 9-phase kill chain, evidence chain, and loot ledger that
- *     survive restarts (long-range state, PentestGPT-style).
- *
- * Skills library: bundled at ../cybersec-skills/skills (offline), or ~/.pi/agent/cybersec-skills.
- * Source: https://github.com/mukul975/Anthropic-Cybersecurity-Skills (Apache 2.0)
+ * This folder is ONE independent agent — no shared code with Aegis. Three files:
+ *   index.ts       ← you are here: identity, engagement memory, commands, wiring
+ *   tools.ts       ← the 7 offensive tools + keyword maps + red synonym table
+ *   skill-index.ts ← the generic skill-retrieval engine (team-agnostic)
  *
  * Rules of engagement: authorized targets only (pentests, labs, CTFs, own assets).
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type, type TObject } from "typebox";
-import { StringEnum } from "@earendil-works/pi-ai";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { SkillIndex, registerSkillTool, w, W_PRIMARY, SKILLS_PATH } from "./skill-index";
+import { TOOLS, SYNONYMS, teamFilter } from "./tools";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Identity — WRAITH, red team. 9-phase kill chain (MITRE ATT&CK aligned).
@@ -104,443 +96,7 @@ const PHASES: Phase[] = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Skill split — Wraith keeps offensive + technical skills, drops blue defensive ones.
-// A skill with no subdomain (or a non-blue subdomain) belongs to red.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const BLUE_SUBDOMAINS = new Set([
-  "threat-hunting", "threat-intelligence", "threat-detection", "soc-operations",
-  "security-operations", "incident-response", "digital-forensics", "malware-analysis",
-  "ransomware-defense", "phishing-defense", "deception-technology", "endpoint-security",
-  "zero-trust-architecture", "zero-trust", "compliance-governance", "governance-risk-compliance",
-  "privacy-compliance", "data-protection", "purple-team", "social-engineering-defense",
-]);
-const redFilter = (sub: string): boolean => !BLUE_SUBDOMAINS.has(sub);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Lightweight semantic layer — offline synonym/alias expansion (no embeddings).
-// A query token also pulls in its aliases at a slightly lower weight, so hacker
-// shorthand ("creds", "privesc", "rce") reaches the canonical skill names.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const SYNONYMS: Record<string, string[]> = {
-  creds: ["credential", "password", "hash", "ntlm", "kerberos", "lsass"],
-  cred: ["credential", "password", "hash"],
-  privesc: ["privilege-escalation", "privesc"],
-  recon: ["reconnaissance", "enumeration", "osint", "scanning"],
-  rce: ["remote-code-execution", "command-execution", "exploitation"],
-  sqli: ["sql-injection", "injection"],
-  xss: ["cross-site-scripting"],
-  ssrf: ["server-side-request-forgery"],
-  lfi: ["file-inclusion"],
-  ad: ["active-directory", "kerberos", "ldap"],
-  dc: ["domain-controller", "active-directory"],
-  c2: ["command-and-control", "beacon", "implant"],
-  pth: ["pass-the-hash"],
-  av: ["antivirus", "evasion", "bypass"],
-  edr: ["endpoint-detection", "evasion", "bypass"],
-  lateral: ["lateral-movement", "pivot"],
-  exfil: ["exfiltration", "data-staging"],
-  persist: ["persistence", "backdoor"],
-  ad_cs: ["adcs", "certipy", "certificate-services"],
-  kerb: ["kerberoasting", "kerberos"],
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SkillIndex — tokenized inverted index + weighted search (with synonym expansion)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const VENDORED_SKILLS = join(__dirname, "..", "cybersec-skills", "skills");
-const SKILLS_PATH = existsSync(VENDORED_SKILLS)
-  ? VENDORED_SKILLS
-  : join(homedir(), ".pi", "agent", "cybersec-skills", "skills");
-
-interface WeightedTerm { term: string; weight: number; }
-interface SearchResult { dir: string; score: number; body: string | null; }
-
-function readSubdomain(path: string): string | null {
-  try {
-    const m = readFileSync(path, "utf-8").match(/^subdomain:\s*(.+)$/m);
-    return m ? m[1].trim() : null;
-  } catch { return null; }
-}
-
-class SkillIndex {
-  private inverted: Map<string, string[]> = new Map();
-  private allDirs: string[] = [];
-
-  constructor(skillsPath: string, subFilter?: (sub: string) => boolean) {
-    this.build(skillsPath, subFilter);
-  }
-
-  get count(): number { return this.allDirs.length; }
-
-  list(keyword: string): string[] {
-    if (!keyword) return this.allDirs;
-    const kw = keyword.toLowerCase();
-    return this.allDirs.filter(d => d.toLowerCase().includes(kw));
-  }
-
-  /** Expand each term with its synonyms (lower weight), then weighted-match. */
-  search(terms: WeightedTerm[]): SearchResult[] {
-    if (terms.length === 0) return [];
-
-    const expanded: WeightedTerm[] = [...terms];
-    for (const { term, weight } of terms) {
-      const aliases = SYNONYMS[term];
-      if (!aliases) continue;
-      for (const alias of aliases) {
-        for (const tok of tokenize(alias)) {
-          expanded.push({ term: tok, weight: Math.max(1, weight - 1) });
-        }
-      }
-    }
-
-    const candidates: Map<string, number> = new Map();
-    for (const { term, weight } of expanded) {
-      const t = term.toLowerCase();
-      const exactDirs = this.inverted.get(t);
-      if (exactDirs) {
-        for (const dir of exactDirs) {
-          candidates.set(dir, (candidates.get(dir) ?? 0) + weight * 3);
-        }
-      }
-      for (const dir of this.allDirs) {
-        if (candidates.has(dir)) continue;
-        if (dir.toLowerCase().includes(t)) {
-          candidates.set(dir, (candidates.get(dir) ?? 0) + weight * 1);
-        }
-      }
-    }
-
-    const results: SearchResult[] = [];
-    for (const [dir, score] of candidates) {
-      if (score === 0) continue;
-      const body = this.loadBody(dir);
-      if (body) results.push({ dir, score, body });
-    }
-    results.sort((a, b) => b.score - a.score);
-    return results;
-  }
-
-  private build(skillsPath: string, subFilter?: (sub: string) => boolean): void {
-    if (!existsSync(skillsPath)) return;
-    let dirs = readdirSync(skillsPath, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => d.name);
-    if (subFilter) {
-      dirs = dirs.filter(dir => {
-        const sub = readSubdomain(join(skillsPath, dir, "SKILL.md"));
-        return sub === null ? true : subFilter(sub);
-      });
-    }
-    this.allDirs = dirs;
-    for (const dir of dirs) {
-      for (const seg of dir.toLowerCase().split("-")) {
-        const list = this.inverted.get(seg);
-        if (list) list.push(dir); else this.inverted.set(seg, [dir]);
-      }
-    }
-  }
-
-  private loadBody(dir: string): string | null {
-    try {
-      const raw = readFileSync(join(SKILLS_PATH, dir, "SKILL.md"), "utf-8");
-      const parts = raw.split("---");
-      return parts.length >= 3 ? parts.slice(2).join("---").trim() : raw.trim();
-    } catch { return null; }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tool factory — shared search → format → return logic
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface ToolConfig {
-  name: string;
-  label: string;
-  description: string;
-  promptSnippet: string;
-  promptGuidelines: string[];
-  parameters: TObject;
-  buildKeywords: (params: Record<string, unknown>) => WeightedTerm[];
-}
-
-function formatOutput(title: string, result: SearchResult, params: Record<string, unknown>): string {
-  return [
-    `## ${title}`,
-    ``,
-    `**Loaded skill:** \`${result.dir}\` (score: ${result.score})`,
-    `**Parameters:** ${JSON.stringify(params)}`,
-    ``,
-    `---`,
-    ``,
-    result.body,
-    ``,
-    `---`,
-    `> 📚 Source: [Anthropic-Cybersecurity-Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills) (Apache 2.0)`,
-  ].join("\n");
-}
-
-function formatNoMatch(title: string, params: Record<string, unknown>, terms: WeightedTerm[]): string {
-  return [
-    `## ${title}`,
-    ``,
-    `**Parameters:** ${JSON.stringify(params)}`,
-    ``,
-    `> ⚠️ No matching skill found. Searched: ${terms.map(t => t.term).join(", ")}`,
-    ``,
-    `### Troubleshooting`,
-    `- Try more specific keywords, or \`/find <what you want to do>\` for a semantic search`,
-    `- Use \`/arsenal <keyword>\` to browse available skills`,
-  ].join("\n");
-}
-
-function registerSkillTool(pi: ExtensionAPI, index: SkillIndex, config: ToolConfig): void {
-  pi.registerTool({
-    name: config.name,
-    label: config.label,
-    description: config.description,
-    promptSnippet: config.promptSnippet,
-    promptGuidelines: config.promptGuidelines,
-    parameters: config.parameters,
-    async execute(_id, params, _signal, onUpdate, _ctx) {
-      const terms = config.buildKeywords(params);
-      onUpdate?.({ content: [{ type: "text", text: `Searching ${index.count} skills (${terms.map(t => t.term).join(", ")})...` }] });
-      const best = index.search(terms)[0];
-      if (!best) {
-        return {
-          content: [{ type: "text", text: formatNoMatch(config.label, params, terms) }],
-          details: { ...params, skillFound: false },
-        };
-      }
-      return {
-        content: [{ type: "text", text: formatOutput(config.label, best, params) }],
-        details: { ...params, skillFound: true, skillDir: best.dir, score: best.score },
-      };
-    },
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tokenizer + weighted-keyword helper
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const STOP_WORDS = new Set([
-  "a", "an", "the", "and", "or", "of", "in", "on", "to", "for", "with",
-  "is", "at", "by", "from", "as", "into", "be", "it", "its",
-]);
-
-function tokenize(s: string): string[] {
-  return s.toLowerCase().split(/[-_\s]/).filter(t => t.length > 0 && !STOP_WORDS.has(t));
-}
-
-/** Map keywords → weighted terms; underscore/hyphen-separated words are split into tokens. */
-function w(weight: number, ...keywords: string[]): WeightedTerm[] {
-  return keywords.flatMap(kw => tokenize(kw).map(t => ({ term: t, weight })));
-}
-
-const W_PRIMARY = 3;   // framework name, attack class, core technique
-const W_SECONDARY = 2; // scope, phase, platform
-const W_AUX = 1;       // environment, auxiliary
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Enums
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const SEVERITY = ["critical", "high", "medium", "low", "all"] as const;
-
-const VULN_SCOPE = ["web_app", "api", "network", "container", "mobile", "dependency", "config", "secret", "cloud"] as const;
-const VULN_FRAMEWORK = ["owasp_top10", "cwe_top25", "nist", "cis", "custom"] as const;
-
-const PENTEST_PHASE = ["recon", "scanning", "exploitation", "privilege_escalation", "lateral_movement", "persistence", "exfiltration", "cleanup", "full"] as const;
-const PENTEST_ENV = ["web", "internal_network", "active_directory", "cloud", "mobile"] as const;
-const PENTEST_FW = ["mitre_attack", "ptes", "owasp", "nist"] as const;
-
-const EXPLOIT_CLASS = ["binary", "web", "deserialization", "injection", "auth_bypass", "active_directory", "poc"] as const;
-const EXPLOIT_PLATFORM = ["windows", "linux", "web", "cloud", "mobile"] as const;
-
-const PASSWORD_METHOD = ["cracking", "brute_force", "spraying", "dumping", "kerberoast", "ntlm_relay", "pass_the_hash"] as const;
-const PASSWORD_PLATFORM = ["windows", "linux", "active_directory", "web", "cloud"] as const;
-
-const C2_FRAMEWORK = ["sliver", "cobalt_strike", "havoc", "mythic", "generic"] as const;
-const C2_TASK = ["infrastructure", "implant", "redirector", "evasion", "post_exploitation"] as const;
-
-const SOCIAL_VECTOR = ["phishing", "spearphishing", "pretext", "vishing", "osint"] as const;
-
-const CLOUD_PROVIDER = ["aws", "azure", "gcp", "kubernetes", "multi"] as const;
-const CLOUD_SCOPE = ["iam", "storage", "network", "compute", "kubernetes", "serverless", "database", "logging", "secrets"] as const;
-const CLOUD_COMPLIANCE = ["cis", "nist", "soc2", "pci_dss", "hipaa", "custom"] as const;
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Keyword builders
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const scopeMap: Record<string, string[]> = {
-  web_app:    ["web-application", "pentest", "scanning", "xss", "sql-injection", "nikto", "burp"],
-  api:        ["api-security", "api", "graphql", "rest", "fuzzing"],
-  network:    ["network", "nmap", "nessus", "openvas", "infrastructure"],
-  container:  ["container", "docker", "trivy", "grype", "kubernetes"],
-  mobile:     ["mobile", "android", "ios", "frida"],
-  dependency: ["dependency", "sca", "snyk", "supply-chain", "sbom"],
-  config:     ["misconfiguration", "cis-benchmark", "hardening", "auditing"],
-  secret:     ["secret", "gitleaks", "trufflehog", "credential"],
-  cloud:      ["cloud", "aws", "azure", "gcp", "scout-suite"],
-};
-function kwVuln(params: Record<string, unknown>): WeightedTerm[] {
-  const scope = params.scope as string[];
-  const framework = params.framework as string | undefined;
-  const severity = params.severity as string | undefined;
-  const terms: WeightedTerm[] = [];
-  for (const s of scope) terms.push(...w(W_SECONDARY, ...(scopeMap[s] ?? [s])));
-  if (framework) terms.push(...w(W_PRIMARY, framework));
-  if (severity && severity !== "all") terms.push(...w(W_AUX, severity));
-  if (terms.length === 0) terms.push(...w(W_PRIMARY, "vulnerability-scanning"));
-  return terms;
-}
-
-const phaseMap: Record<string, string[]> = {
-  recon:                ["reconnaissance", "osint", "enumeration", "subdomain", "dns"],
-  scanning:             ["scanning", "nmap", "nessus", "vulnerability-scanning"],
-  exploitation:         ["exploitation", "exploiting", "metasploit", "sqlmap"],
-  privilege_escalation: ["privilege-escalation", "privesc", "token", "suid"],
-  lateral_movement:     ["lateral-movement", "wmiexec", "pass-the-hash", "netexec"],
-  persistence:          ["persistence", "backdoor", "scheduled-task", "registry"],
-  exfiltration:         ["exfiltration", "dns-tunneling", "icmp"],
-  cleanup:              ["cleanup", "log", "anti-forensics"],
-  full:                 ["penetration-test", "red-team", "full-scope"],
-};
-const pentestEnvMap: Record<string, string[]> = {
-  web:              ["web-application", "burp", "owasp", "zap"],
-  internal_network: ["internal-network", "lateral-movement", "netexec"],
-  active_directory: ["active-directory", "kerberoasting", "bloodhound", "dcsync"],
-  cloud:            ["cloud", "aws", "azure", "gcp", "pacu"],
-  mobile:           ["mobile", "android", "ios", "frida"],
-};
-function kwPentest(params: Record<string, unknown>): WeightedTerm[] {
-  const phase = params.phase as string | undefined;
-  const env = params.environment as string | undefined;
-  const terms: WeightedTerm[] = [];
-  if (phase && phase !== "full") terms.push(...w(W_PRIMARY, ...(phaseMap[phase] ?? [phase])));
-  else terms.push(...w(W_PRIMARY, "penetration-test"));
-  if (env) terms.push(...w(W_SECONDARY, ...(pentestEnvMap[env] ?? [env])));
-  return terms;
-}
-
-const exploitClassMap: Record<string, string[]> = {
-  binary:           ["exploitation", "heap-spray", "buffer-overflow", "rop", "shellcode", "binary"],
-  web:              ["exploiting", "http-request-smuggling", "ssrf", "idor", "deserialization"],
-  deserialization:  ["insecure-deserialization", "deserialization", "gadget"],
-  injection:        ["injection", "sql-injection", "command-injection", "sqlmap"],
-  auth_bypass:      ["jwt", "authentication", "authorization", "oauth", "bypass"],
-  active_directory: ["active-directory", "kerberoasting", "adcs", "certipy", "delegation"],
-  poc:              ["exploit-development", "proof-of-concept", "cve", "exploiting"],
-};
-const exploitPlatMap: Record<string, string[]> = {
-  windows: ["windows", "pe", "dotnet"],
-  linux:   ["linux", "elf"],
-  web:     ["web-application", "http"],
-  cloud:   ["cloud", "aws", "azure"],
-  mobile:  ["mobile", "android", "ios"],
-};
-function kwExploit(params: Record<string, unknown>): WeightedTerm[] {
-  const cls = params.exploit_class as string | undefined;
-  const plat = params.platform as string | undefined;
-  const terms: WeightedTerm[] = [];
-  if (cls) terms.push(...w(W_PRIMARY, ...(exploitClassMap[cls] ?? [cls])));
-  else terms.push(...w(W_PRIMARY, "exploit-development", "exploitation"));
-  if (plat) terms.push(...w(W_SECONDARY, ...(exploitPlatMap[plat] ?? [plat])));
-  return terms;
-}
-
-const passwordMethodMap: Record<string, string[]> = {
-  cracking:      ["hashcat", "john", "cracking", "hash", "wordlist"],
-  brute_force:   ["brute-force", "hydra", "brute", "medusa"],
-  spraying:      ["password-spraying", "spraying", "spray"],
-  dumping:       ["credential-dumping", "mimikatz", "lsass", "dpapi", "lazagne", "secretsdump"],
-  kerberoast:    ["kerberoasting", "kerberos", "impacket", "asrep"],
-  ntlm_relay:    ["ntlm-relay", "relay", "responder", "coercion", "ntlmrelayx"],
-  pass_the_hash: ["pass-the-hash", "overpass-the-hash", "pth", "secretsdump"],
-};
-const passwordPlatMap: Record<string, string[]> = {
-  windows:          ["windows", "ntlm", "sam"],
-  linux:            ["linux", "shadow", "unshadow"],
-  active_directory: ["active-directory", "kerberos", "ldap"],
-  web:              ["web", "login", "http"],
-  cloud:            ["cloud", "aws", "azure", "token"],
-};
-function kwPassword(params: Record<string, unknown>): WeightedTerm[] {
-  const method = params.method as string;
-  const plat = params.platform as string | undefined;
-  const terms: WeightedTerm[] = [];
-  terms.push(...w(W_PRIMARY, ...(passwordMethodMap[method] ?? [method])));
-  if (plat) terms.push(...w(W_SECONDARY, ...(passwordPlatMap[plat] ?? [plat])));
-  return terms;
-}
-
-const c2FrameworkMap: Record<string, string[]> = {
-  sliver:        ["sliver", "c2"],
-  cobalt_strike: ["cobalt-strike", "cobaltstrike", "beacon", "malleable"],
-  havoc:         ["havoc", "c2"],
-  mythic:        ["mythic", "c2", "agent"],
-  generic:       ["c2", "command-and-control", "red-team", "implant"],
-};
-const c2TaskMap: Record<string, string[]> = {
-  infrastructure:   ["infrastructure", "redirector", "domain-fronting"],
-  implant:          ["implant", "beacon", "payload"],
-  redirector:       ["redirector", "domain-fronting", "cdn"],
-  evasion:          ["evasion", "obfuscation", "bypass"],
-  post_exploitation:["post-exploitation", "pivot", "lateral-movement"],
-};
-function kwC2(params: Record<string, unknown>): WeightedTerm[] {
-  const framework = params.framework as string;
-  const task = params.task as string | undefined;
-  const terms: WeightedTerm[] = [];
-  terms.push(...w(W_PRIMARY, ...(c2FrameworkMap[framework] ?? [framework])));
-  if (task) terms.push(...w(W_SECONDARY, ...(c2TaskMap[task] ?? [task])));
-  return terms;
-}
-
-const socialVectorMap: Record<string, string[]> = {
-  phishing:      ["phishing", "gophish", "simulation", "campaign"],
-  spearphishing: ["spearphishing", "spear", "targeted", "campaign"],
-  pretext:       ["pretext", "pretexting", "social-engineering"],
-  vishing:       ["vishing", "voice", "pretext-call"],
-  osint:         ["osint", "reconnaissance", "footprinting"],
-};
-function kwSocial(params: Record<string, unknown>): WeightedTerm[] {
-  const vector = params.vector as string;
-  const terms: WeightedTerm[] = [];
-  terms.push(...w(W_PRIMARY, ...(socialVectorMap[vector] ?? [vector])));
-  terms.push(...w(W_AUX, "social-engineering"));
-  return terms;
-}
-
-const cloudScopeMap: Record<string, string[]> = {
-  iam:        ["iam", "permissions", "privilege-escalation", "identity", "role"],
-  storage:    ["storage", "s3", "bucket", "misconfiguration", "blob"],
-  network:    ["network", "vpc", "firewall", "security-group", "acl"],
-  compute:    ["compute", "ec2", "vm", "instance"],
-  kubernetes: ["kubernetes", "k8s", "eks", "aks", "gke", "rbac", "pod"],
-  serverless: ["serverless", "lambda", "function", "azure-function"],
-  database:   ["database", "rds", "encryption", "cosmos"],
-  logging:    ["logging", "cloudtrail", "audit-log", "monitoring"],
-  secrets:    ["secrets", "kms", "vault", "key-management"],
-};
-function kwCloud(params: Record<string, unknown>): WeightedTerm[] {
-  const provider = params.provider as string;
-  const scope = params.scope as string[];
-  const compliance = params.compliance as string | undefined;
-  const terms: WeightedTerm[] = [];
-  terms.push(...w(W_PRIMARY, provider));
-  for (const s of scope) terms.push(...w(W_SECONDARY, ...(cloudScopeMap[s] ?? [s])));
-  if (compliance) terms.push(...w(W_AUX, compliance));
-  return terms;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // Long-range engagement memory — persisted kill chain + evidence chain + loot ledger.
-// Survives restarts so a multi-day engagement keeps its state. (PentestGPT-style PTT.)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface Evidence { phase: string; note: string; }
@@ -552,9 +108,7 @@ function loadState(): State {
   try {
     const s = JSON.parse(readFileSync(STATE_FILE, "utf-8"));
     return { target: s.target ?? "", phase: s.phase ?? -1, evidence: s.evidence ?? [], loot: s.loot ?? [] };
-  } catch {
-    return { target: "", phase: -1, evidence: [], loot: [] };
-  }
+  } catch { return { target: "", phase: -1, evidence: [], loot: [] }; }
 }
 function saveState(state: State): void {
   try { writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch { /* best-effort */ }
@@ -575,136 +129,19 @@ function memoryDigest(state: State): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Extension entry — WRAITH (red)
+// Extension entry
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function (pi: ExtensionAPI) {
   const skillsAvailable = existsSync(SKILLS_PATH);
-  const index = skillsAvailable ? new SkillIndex(SKILLS_PATH, redFilter) : new SkillIndex("");
+  const index = skillsAvailable ? new SkillIndex(SKILLS_PATH, teamFilter, SYNONYMS) : new SkillIndex("");
   const state = loadState();
 
-  // ── 7 offensive tools ─────────────────────────────────────────────────────
-  const tools: ToolConfig[] = [
-    {
-      name: "vulnerability_assessment",
-      label: "Vulnerability Assessment",
-      description:
-        "Comprehensive vulnerability assessment of a target: CVE scanning, OWASP Top 10 detection, " +
-        "dependency audit, config review, CVSS scoring. Covers web apps, network, containers, API, mobile. " +
-        "Auto-matches the most relevant attack skill.",
-      promptSnippet: "Scan a target for vulnerabilities — auto-matches the best cybersec skill",
-      promptGuidelines: ["Use vulnerability_assessment to enumerate weaknesses; set target and scope."],
-      parameters: Type.Object({
-        target: Type.String({ description: "Assessment target: directory path, URL, IP address, or container image" }),
-        scope: Type.Array(StringEnum(VULN_SCOPE), { description: "Assessment scope" }),
-        severity: Type.Optional(StringEnum(SEVERITY)),
-        framework: Type.Optional(StringEnum(VULN_FRAMEWORK)),
-      }),
-      buildKeywords: kwVuln,
-    },
-    {
-      name: "penetration_test",
-      label: "Penetration Test",
-      description:
-        "Systematic penetration test: recon → exploitation → privilege escalation → lateral movement → " +
-        "persistence → cleanup. Covers web, internal network, Active Directory, cloud, mobile.",
-      promptSnippet: "Run a penetration test phase — auto-matches the best cybersec skill",
-      promptGuidelines: ["Use penetration_test to drive the kill chain; set target and phase."],
-      parameters: Type.Object({
-        target: Type.String({ description: "Pentest target: IP, domain, URL, or IP range" }),
-        phase: Type.Optional(StringEnum(PENTEST_PHASE)),
-        environment: Type.Optional(StringEnum(PENTEST_ENV)),
-        framework: Type.Optional(StringEnum(PENTEST_FW)),
-      }),
-      buildKeywords: kwPentest,
-    },
-    {
-      name: "exploit_development",
-      label: "Exploit Development",
-      description:
-        "Build or adapt an exploit / PoC for a specific weakness: binary (heap/stack/ROP), web " +
-        "(smuggling, SSRF, IDOR), insecure deserialization, injection, auth bypass, or Active Directory " +
-        "(Kerberoasting, ADCS). Pulls a matching exploitation workflow with real tooling.",
-      promptSnippet: "Develop or adapt an exploit / PoC — auto-matches the best cybersec skill",
-      promptGuidelines: ["Use exploit_development to weaponize a specific vuln class; set exploit_class."],
-      parameters: Type.Object({
-        target: Type.String({ description: "What to exploit: a CVE, endpoint, binary, or service" }),
-        exploit_class: StringEnum(EXPLOIT_CLASS, { description: "Vulnerability class to weaponize" }),
-        platform: Type.Optional(StringEnum(EXPLOIT_PLATFORM)),
-      }),
-      buildKeywords: kwExploit,
-    },
-    {
-      name: "password_attack",
-      label: "Password Attack",
-      description:
-        "Credential attacks: hash cracking (hashcat/john), brute force / spraying, OS & AD credential " +
-        "dumping (mimikatz, LSASS, DPAPI, secretsdump), Kerberoasting, NTLM relay, pass-the-hash. " +
-        "Covers Windows, Linux, Active Directory, web, cloud.",
-      promptSnippet: "Attack credentials — auto-matches the best cybersec skill",
-      promptGuidelines: ["Use password_attack for any credential access; set method. /loot every secret you recover."],
-      parameters: Type.Object({
-        target: Type.String({ description: "Credential target: a hash file, host, account, or hash string" }),
-        method: StringEnum(PASSWORD_METHOD, { description: "Attack method" }),
-        platform: Type.Optional(StringEnum(PASSWORD_PLATFORM)),
-      }),
-      buildKeywords: kwPassword,
-    },
-    {
-      name: "c2_operations",
-      label: "C2 Operations",
-      description:
-        "Command-and-control & post-exploitation infrastructure: stand up and operate a C2 (Sliver, " +
-        "Cobalt Strike, Havoc, Mythic), build implants and redirectors, and manage beacons. Authorized " +
-        "red-team engagements only.",
-      promptSnippet: "Set up / operate C2 infrastructure — auto-matches the best cybersec skill",
-      promptGuidelines: ["Use c2_operations to establish reliable control; set framework."],
-      parameters: Type.Object({
-        objective: Type.String({ description: "What to do: e.g. 'stand up a Sliver listener', 'build a redirector'" }),
-        framework: StringEnum(C2_FRAMEWORK, { description: "C2 framework" }),
-        task: Type.Optional(StringEnum(C2_TASK)),
-      }),
-      buildKeywords: kwC2,
-    },
-    {
-      name: "social_engineering",
-      label: "Social Engineering",
-      description:
-        "Offensive social engineering for authorized assessments: phishing / spearphishing campaigns " +
-        "(gophish), pretexting, vishing, and OSINT-driven target profiling. Simulation and awareness " +
-        "testing within an approved scope.",
-      promptSnippet: "Run an authorized social-engineering campaign — auto-matches the best cybersec skill",
-      promptGuidelines: ["Use social_engineering for approved phishing/pretext simulations; set vector."],
-      parameters: Type.Object({
-        target: Type.String({ description: "Campaign target: an org, user group, or scenario" }),
-        vector: StringEnum(SOCIAL_VECTOR, { description: "Social-engineering vector" }),
-      }),
-      buildKeywords: kwSocial,
-    },
-    {
-      name: "cloud_security_audit",
-      label: "Cloud Security Audit",
-      description:
-        "Offensive cloud audit: IAM privilege-escalation paths, exposed storage buckets, network ACLs, " +
-        "Kubernetes RBAC, serverless. Covers AWS, Azure, GCP.",
-      promptSnippet: "Audit a cloud environment for attack paths — auto-matches the best cybersec skill",
-      promptGuidelines: ["Use cloud_security_audit to find cloud attack paths; set provider and scope."],
-      parameters: Type.Object({
-        provider: StringEnum(CLOUD_PROVIDER, { description: "Cloud provider" }),
-        scope: Type.Array(StringEnum(CLOUD_SCOPE), { description: "Audit scope" }),
-        compliance: Type.Optional(StringEnum(CLOUD_COMPLIANCE)),
-      }),
-      buildKeywords: kwCloud,
-    },
-  ];
-  for (const tool of tools) registerSkillTool(pi, index, tool);
+  for (const tool of TOOLS) registerSkillTool(pi, index, tool);
 
-  // ── Persona injection + engagement memory (every turn) ─────────────────────
-  pi.on("before_agent_start", async (event: any, _ctx: any) => {
-    return { systemPrompt: event.systemPrompt + "\n" + PERSONA + memoryDigest(state) };
-  });
+  // Persona + engagement memory, injected every turn.
+  pi.on("before_agent_start", async (event: any) => ({ systemPrompt: event.systemPrompt + "\n" + PERSONA + memoryDigest(state) }));
 
-  // ── Status + phase driver ──────────────────────────────────────────────────
   const refreshStatus = (ctx: any) => {
     if (!ctx.hasUI) return;
     const phase = state.phase >= 0 ? `Phase ${state.phase + 1}/${PHASES.length} · ${PHASES[state.phase].name}` : "idle";
@@ -724,7 +161,6 @@ export default function (pi: ExtensionAPI) {
     );
   };
 
-  // ── Banner + startup ───────────────────────────────────────────────────────
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
     ctx.ui.setTheme?.(THEME);
@@ -735,8 +171,7 @@ export default function (pi: ExtensionAPI) {
       refreshStatus(ctx);
       ctx.ui.notify(
         skillsAvailable
-          ? `${NAME} online · authorized red-team mode · ${index.count} skills ready` +
-            (state.phase >= 0 ? ` · resumed engagement on ${state.target}` : "")
+          ? `${NAME} online · authorized red-team mode · ${index.count} skills ready` + (state.phase >= 0 ? ` · resumed engagement on ${state.target}` : "")
           : `${NAME} online · ⚠️ skills library not found (run ./install.sh)`,
         skillsAvailable ? "info" : "warning",
       );
@@ -744,32 +179,22 @@ export default function (pi: ExtensionAPI) {
     reveal();
   });
 
-  // ── Commands ───────────────────────────────────────────────────────────────
-  const HELP: string[] = [
-    "",
-    `  ${NAME} — red-team agent. One target, one kill chain, one step at a time.`,
-    "",
+  const HELP = [
+    "", `  ${NAME} — red-team agent. One target, one kill chain, one step at a time.`, "",
     "  The engagement:",
     "    /engage <target>   start — lock target, run Phase 1 (Recon), then stop",
     "    /next              advance one phase along the 9-phase kill chain",
-    "    /phases            show the whole kill chain and where you are",
-    "    /report            jump straight to the report",
-    "",
+    "    /phases · /report  show the kill chain · jump to the report", "",
     "  Memory:",
     "    /log <note>        add a finding to the evidence chain (persisted)",
     "    /loot [item]       record a captured cred/host/shell — no arg lists the loot",
-    "    /evidence          show the full engagement memory",
-    "    /reset             clear the engagement (new target)",
-    "",
+    "    /evidence · /reset show the full engagement memory · clear it", "",
     "  Skills:",
     "    /find <query>      semantic skill search ('dump creds from the DC')",
-    "    /arsenal [kw]      browse the 817-skill library",
-    "    /list [kw]         list skills for the current phase (or a keyword)",
-    "    /help              this help",
-    "",
+    "    /arsenal [kw]      browse skills — for this phase, or matching a keyword",
+    "    /help              this help", "",
     `  You can also just talk:  "grab the creds"   "escalate to root"   "pivot to the DC"`,
-    "  Rule of engagement: authorized targets only.",
-    "",
+    "  Rule of engagement: authorized targets only.", "",
   ];
 
   pi.registerCommand("engage", {
@@ -815,7 +240,6 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => { ctx.ui.notify(HELP.join("\n"), "info"); },
   });
 
-  // ── Memory commands ────────────────────────────────────────────────────────
   pi.registerCommand("log", {
     description: "📝 Add a finding to the evidence chain",
     handler: async (args, ctx) => {
@@ -843,15 +267,13 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("evidence", {
     description: "🧾 Show the full engagement memory",
     handler: async (_args, ctx) => {
-      const lines = [`${NAME} engagement memory`, ""];
-      lines.push(`Target: ${state.target || "(none)"}`);
-      lines.push(`Phase:  ${state.phase >= 0 ? `${state.phase + 1}/${PHASES.length} · ${PHASES[state.phase].name}` : "idle"}`);
-      lines.push("");
-      lines.push(`Evidence chain (${state.evidence.length}):`);
-      lines.push(...(state.evidence.length ? state.evidence.map(e => `  - [${e.phase}] ${e.note}`) : ["  (empty)"]));
-      lines.push("");
-      lines.push(`Loot (${state.loot.length}):`);
-      lines.push(...(state.loot.length ? state.loot.map(l => `  · ${l}`) : ["  (empty)"]));
+      const lines = [`${NAME} engagement memory`, "",
+        `Target: ${state.target || "(none)"}`,
+        `Phase:  ${state.phase >= 0 ? `${state.phase + 1}/${PHASES.length} · ${PHASES[state.phase].name}` : "idle"}`, "",
+        `Evidence chain (${state.evidence.length}):`,
+        ...(state.evidence.length ? state.evidence.map(e => `  - [${e.phase}] ${e.note}`) : ["  (empty)"]), "",
+        `Loot (${state.loot.length}):`,
+        ...(state.loot.length ? state.loot.map(l => `  · ${l}`) : ["  (empty)"])];
       ctx.ui.notify(lines.join("\n"), "info");
     },
   });
@@ -865,7 +287,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── Skill browsing ─────────────────────────────────────────────────────────
   pi.registerCommand("find", {
     description: "🔎 Semantic skill search: /find <what you want to do>",
     handler: async (args, ctx) => {
@@ -874,40 +295,30 @@ export default function (pi: ExtensionAPI) {
       if (!skillsAvailable) { ctx.ui.notify("Skills library not found (run ./install.sh).", "error"); return; }
       const hits = index.search(w(W_PRIMARY, q)).slice(0, 12);
       if (hits.length === 0) { ctx.ui.notify(`No skills matched "${q}".`, "info"); return; }
-      ctx.ui.notify(
-        `Top skills for "${q}":\n` + hits.map(h => `  ${h.score.toString().padStart(3)}  ${h.dir}`).join("\n"),
-        "info",
-      );
+      ctx.ui.notify(`Top skills for "${q}":\n` + hits.map(h => `  ${h.score.toString().padStart(3)}  ${h.dir}`).join("\n"), "info");
     },
   });
 
+  // /arsenal — browse skills. No arg: current phase's skills (or all when idle). With keyword: substring search.
   pi.registerCommand("arsenal", {
-    description: "🧰 Browse / search the 817-skill library (keyword optional)",
+    description: "🧰 Browse skills — this phase, or matching a keyword",
     handler: async (args, ctx) => {
       if (!skillsAvailable) { ctx.ui.notify(`Skills library not found at ${SKILLS_PATH} (run ./install.sh).`, "error"); return; }
-      const keyword = args?.trim() || "";
-      const results = index.list(keyword);
-      if (results.length === 0) { ctx.ui.notify(`No skills found matching "${keyword}"`, "info"); return; }
-      ctx.ui.notify(
-        `${results.length} skills${keyword ? ` matching "${keyword}"` : ""}:\n` +
-        results.slice(0, 30).join("\n") + (results.length > 30 ? `\n... and ${results.length - 30} more` : ""),
-        "info",
-      );
-    },
-  });
-
-  pi.registerCommand("list", {
-    description: "📇 List skills for this phase (or /list <keyword>)",
-    handler: async (args, ctx) => {
       const kw = (args || "").trim();
-      const probe = state.phase >= 0 ? PHASES[state.phase].probe : "";
-      const words = (kw || probe).split(/\s+/).filter(Boolean);
-      const hits = [...new Set(words.flatMap(word => index.list(word)))].sort();
-      if (hits.length === 0) { ctx.ui.notify(`No skills found${kw ? ` for "${kw}"` : ""}.`, "info"); return; }
-      const label = kw ? `"${kw}"` : (state.phase >= 0 ? `Phase ${state.phase + 1} · ${PHASES[state.phase].name}` : "current phase");
+      let hits: string[];
+      let label: string;
+      if (kw) {
+        hits = index.list(kw); label = `"${kw}"`;
+      } else if (state.phase >= 0) {
+        const words = PHASES[state.phase].probe.split(/\s+/).filter(Boolean);
+        hits = [...new Set(words.flatMap(word => index.list(word)))].sort();
+        label = `Phase ${state.phase + 1} · ${PHASES[state.phase].name}`;
+      } else {
+        hits = index.list(""); label = "all";
+      }
+      if (hits.length === 0) { ctx.ui.notify(`No skills found for ${label}.`, "info"); return; }
       ctx.ui.notify(
-        `${hits.length} skills for ${label}:\n` +
-        hits.slice(0, 30).join("\n") + (hits.length > 30 ? `\n... and ${hits.length - 30} more` : ""),
+        `${hits.length} skills · ${label}:\n` + hits.slice(0, 30).join("\n") + (hits.length > 30 ? `\n... and ${hits.length - 30} more` : ""),
         "info",
       );
     },
