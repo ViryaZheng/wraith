@@ -3,3 +3,7 @@ node_modules/
 .DS_Store
 dist/
 *.tsbuildinfo
+
+# per-engagement runtime state (evidence chain / loot / IOC ledger)
+.wraith.json
+.aegis.json

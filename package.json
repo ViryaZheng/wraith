@@ -1,7 +1,7 @@
 {
   "name": "wraith",
-  "version": "3.0.0",
-  "description": "Wraith — 网络安全专用 pi agent（自包含）。红队人格 + 电影黑客绿主题 + 10 个体系化安全工具，817 技能工作流随包自带、离线可用（Nmap/Burp/sqlmap/Metasploit/BloodHound/Volatility 等）。为 Kali Linux 打造。",
+  "version": "0.2.0",
+  "description": "Wraith (red team) + Aegis (blue team) — two independent, self-contained cybersecurity agents for pi. Each ships an offensive/defensive persona, team-specific tools, and the 817-skill offline workflow library (Nmap, Burp, sqlmap, Metasploit, BloodHound, Sliver, Volatility, Sigma, YARA, Splunk, ...). Built for Kali Linux.",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -20,7 +20,7 @@
   "license": "MIT",
   "author": "",
   "pi": {
-    "extensions": ["./extensions"],
+    "extensions": ["./wraith", "./aegis"],
     "themes": ["./themes"]
   },
   "peerDependencies": {
