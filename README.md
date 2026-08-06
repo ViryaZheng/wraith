@@ -53,15 +53,18 @@ Each phase auto-pulls the right skills from the 817-workflow library. You can al
 
 ```
 ~/Wraith/   (self-contained, copy-and-go)
-├── extensions/wraith.ts        ← one engine; WRAITH_TEAM env picks RED (Wraith) or BLUE (Aegis)
-├── cybersec-skills/skills/      ← 817 SKILL.md workflows (vendored, offline)
-├── themes/matrix.json           ← 🔴 red skin (green)
-├── themes/aegis.json            ← 🔵 blue skin (ice blue)
-└── install.sh
+├── wraith/index.ts       ← 🔴 red team entry   (calls the engine with team="red")
+├── aegis/index.ts        ← 🔵 blue team entry  (team="blue")
+├── engine/wraith.ts      ← shared engine: 10 tools, skill index, phase machine, RED/BLUE identities
+├── cybersec-skills/skills/  ← 817 SKILL.md workflows (vendored, offline)
+├── themes/matrix.json    ← 🔴 green skin   ·   themes/aegis.json ← 🔵 ice-blue skin
+└── install.sh            ← links themes, wires wraith/aegis commands, isolated config per agent
 ```
 
-- **One engine, two agents.** `wraith`/`aegis` launch the same extension with `WRAITH_TEAM=red|blue`; that switches persona, main line, banner, theme, and which skills are indexed. They never run at once, so they never collide.
-- **Skills split by team.** Red indexes the offensive/technical subdomains (~447 skills), blue the defensive/ops/forensics ones (~370), by reading each SKILL.md's `subdomain`.
+- **One engine, two agent folders.** `wraith/` and `aegis/` are thin entries that call the shared `engine/` with their team; that fixes persona, main line, banner, theme, tools, and which skills are indexed. They never run at once, so they never collide.
+- **Tools split by team.** Red exposes offensive tools (penetration_test, vulnerability_assessment, cloud_security_audit); blue exposes defensive ones (incident_response, threat_hunt, malware_analysis, forensic_analysis, detection_engineering, security_hardening, compliance_audit, cloud_security_audit).
+- **Skills split by team.** Red indexes offensive/technical subdomains (~447 skills), blue defensive/ops/forensics (~370), read from each SKILL.md's `subdomain`.
+- **Isolated config per agent.** Each agent runs under its own `~/.pi-wraith` / `~/.pi-aegis` (own theme so the header color matches; auth/models symlinked from `~/.pi/agent`). Plain `pi` stays untouched.
 - **Retrieval.** Skill dir names are tokenized into an inverted index; each tool maps its structured params to weighted keywords and returns the top-scoring workflow.
 - **Bundled & offline.** The 817-skill library ships inside the package; the extension locates it via `__dirname`, falling back to `~/.pi/agent/cybersec-skills`.
 

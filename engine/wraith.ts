@@ -57,8 +57,9 @@ asset mapping -> enumeration -> vuln identification -> exploitation -> privilege
   never help evade detection for malicious purposes.
 
 [How you operate]
-- 10 structured tools backed by 817 real workflows (Nmap, Burp, sqlmap, BloodHound, Metasploit,
-  Volatility, etc.). Pick the right tool, pull its workflow, execute via bash, narrate as you go.
+- Your offensive tools ONLY: penetration_test, vulnerability_assessment, cloud_security_audit —
+  backed by ~450 attack workflows (Nmap, Burp, sqlmap, BloodHound, Metasploit, etc.). You do NOT
+  do defense (no IR/hunt/forensics); that's Aegis. Pick a tool, pull its workflow, run via bash.
 - The user may just talk naturally ("grab the creds", "escalate to root", "pivot to the DC").
 
 [Engagement flow — one phase at a time, user-paced]
@@ -125,8 +126,10 @@ detect -> triage -> contain -> investigate/hunt -> eradicate & recover -> report
 - Be evidence-driven: tie every conclusion to logs, IOCs, artifacts. Call out false positives.
 
 [How you operate]
-- 10 structured tools backed by 817 real workflows (Sigma, YARA, Splunk, Volatility, Zeek,
-  Velociraptor, etc.). Pick the right tool, pull its workflow, execute via bash, narrate as you go.
+- Your defensive tools ONLY: incident_response, threat_hunt, malware_analysis, forensic_analysis,
+  detection_engineering, security_hardening, compliance_audit, cloud_security_audit — backed by
+  ~370 defense workflows (Sigma, YARA, Splunk, Volatility, Zeek, Velociraptor, etc.). You do NOT
+  run offensive pentests; that's Wraith. Pick a tool, pull its workflow, run via bash.
 - The user may just talk naturally ("triage this alert", "hunt for C2 beacons", "carve the memory dump").
 
 [Response flow — one phase at a time, user-paced]
@@ -785,9 +788,8 @@ function kwForensic(params: Record<string, unknown>): WeightedTerm[] {
 // Extension 入口
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export default function cybersec(pi: ExtensionAPI) {
-  // Pick side from env: WRAITH_TEAM=blue -> Aegis (defense), otherwise Wraith (offense).
-  const team: "red" | "blue" = process.env.WRAITH_TEAM === "blue" ? "blue" : "red";
+// Shared engine. Each agent folder calls this with its team.
+export function registerAgent(pi: ExtensionAPI, team: "red" | "blue") {
   const ID = team === "blue" ? BLUE : RED;
 
   const skillsAvailable = existsSync(SKILLS_PATH);
@@ -971,8 +973,17 @@ export default function cybersec(pi: ExtensionAPI) {
     },
   ];
 
+  // Register only this team's tools: red = offensive, blue = defensive, cloud = shared.
+  const TEAM_TOOLS: Record<string, "red" | "blue" | "both"> = {
+    vulnerability_assessment: "red", penetration_test: "red",
+    incident_response: "blue", threat_hunt: "blue", malware_analysis: "blue",
+    forensic_analysis: "blue", detection_engineering: "blue",
+    security_hardening: "blue", compliance_audit: "blue",
+    cloud_security_audit: "both",
+  };
   for (const tool of tools) {
-    registerSkillTool(pi, index, tool);
+    const owner = TEAM_TOOLS[tool.name] ?? "both";
+    if (owner === "both" || owner === team) registerSkillTool(pi, index, tool);
   }
 
   // ── /cybersec-list 命令 ─────────────────────────────────────────────────
