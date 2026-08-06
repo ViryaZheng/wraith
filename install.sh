@@ -43,7 +43,7 @@ REPO="${WRAITH_REPO:-https://github.com/ViryaZheng/wraith.git}"
 WRAITH_HOME="${WRAITH_HOME:-$HOME/Wraith}"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 
-if [ -n "$SRC" ] && [ -d "$SRC/cybersec-skills" ]; then
+if [ -n "$SRC" ] && [ -f "$SRC/wraith/index.ts" ]; then
   PKG="$SRC"                                   # running from a checkout
   info "using local checkout: $PKG"
 else
