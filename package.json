@@ -1,27 +1,27 @@
 {
-  "name": "pi-cybersec",
-  "version": "1.0.0",
-  "description": "Cybersecurity toolkit extension for pi coding agent — vulnerability assessment, penetration testing, incident response, threat hunting, malware analysis, cloud security audit, compliance audit, security hardening, detection engineering, and forensic analysis",
+  "name": "wraith",
+  "version": "3.0.0",
+  "description": "Wraith — 网络安全专用 pi agent（自包含）。红队人格 + 电影黑客绿主题 + 10 个体系化安全工具，817 技能工作流随包自带、离线可用（Nmap/Burp/sqlmap/Metasploit/BloodHound/Volatility 等）。为 Kali Linux 打造。",
   "keywords": [
     "pi-package",
+    "pi-extension",
     "cybersecurity",
     "security",
     "pentest",
+    "redteam",
+    "kali",
     "vulnerability",
     "incident-response",
     "threat-hunting",
     "malware-analysis",
     "forensics",
-    "compliance"
+    "mitre-attack"
   ],
   "license": "MIT",
   "author": "",
-  "repository": {
-    "type": "git",
-    "url": ""
-  },
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": ["./extensions"],
+    "themes": ["./themes"]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
