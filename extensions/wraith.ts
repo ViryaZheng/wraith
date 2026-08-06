@@ -1,17 +1,18 @@
 /**
- * Wraith — 网络安全专用 agent 本体（一个 extension）
+ * Wraith — the network-security agent body (a single pi extension).
  *
- * 这是「一个 agent」：人设 + 快捷命令 + 10 个工具 + 817 技能检索，是一体的。
- * 皮肤（绿色 matrix 主题）是独立的一层，在 themes/matrix.json。
+ * This is "one agent": persona + fast commands + 10 tools + 817-skill retrieval, unified.
+ * The skin (green matrix theme) is a separate layer in themes/matrix.json.
  *
- *   ▸ 工具引擎：把 Anthropic-Cybersecurity-Skills (817 个 SKILL.md) 通过分词
- *     倒排索引封装为 10 个 function-calling 工具，返回完整工作流（含真实命令）。
- *   ▸ agent 本体：红队人设（每轮注入 system prompt）+ 快捷命令 /recon /pwn /report。
+ *   - Tool engine: wraps Anthropic-Cybersecurity-Skills (817 SKILL.md) via a tokenized
+ *     inverted index into 10 function-calling tools returning full workflows (real commands).
+ *   - Agent body: red-team persona (injected into the system prompt each turn) + fast
+ *     commands /pwn /recon /report.
  *
- * Skills 库: ~/.pi/agent/cybersec-skills/skills/
- * 来源: https://github.com/mukul975/Anthropic-Cybersecurity-Skills (Apache 2.0)
+ * Skills library: ~/.pi/agent/cybersec-skills/skills/
+ * Source: https://github.com/mukul975/Anthropic-Cybersecurity-Skills (Apache 2.0)
  *
- * 改名字：改下面的 AGENT_NAME。
+ * To rename the agent, change AGENT_NAME below.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -22,52 +23,159 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Agent 身份：名字 / 开场 banner / 红队人设
+// Two agents, one engine.  RED = Wraith (offense)  ·  BLUE = Aegis (defense).
+// Switch at runtime with /wraith or /aegis — also swaps the theme (matrix/aegis).
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const AGENT_NAME = "WRAITH";
+interface Phase { id: string; name: string; brief: string; order: string; probe: string; }
+interface Identity { name: string; theme: string; banner: string[]; persona: string; phases: Phase[]; }
 
-// 荧光绿电影黑客风 ASCII banner（配 matrix 主题）
-const BANNER: string[] = [
-  "",
-  "  ██     ██ ██████   █████  ██ ████████ ██   ██",
-  "  ██     ██ ██   ██ ██   ██ ██    ██    ██   ██",
-  "  ██  █  ██ ██████  ███████ ██    ██    ███████",
-  "  ██ ███ ██ ██   ██ ██   ██ ██    ██    ██   ██",
-  "   ███ ███  ██   ██ ██   ██ ██    ██    ██   ██",
-  "",
-  "  ┌─[ RED TEAM // OFFENSIVE SECURITY AGENT ]─────────┐",
-  "  │  10 tools · 817 skill workflows · authorized ops │",
-  "  └──────────────────────────────────────────────────┘",
-  "  wake the ghost:  /recon <目标>   /pwn <目标>   /report",
-  "",
-];
-
-// 红队人设 —— 每一轮对话都注入到 system prompt
-const PERSONA = `
+const RED: Identity = {
+  name: "WRAITH",
+  theme: "matrix",
+  banner: [
+    "  ██     ██ ██████   █████  ██ ████████ ██   ██",
+    "  ██     ██ ██   ██ ██   ██ ██    ██    ██   ██",
+    "  ██  █  ██ ██████  ███████ ██    ██    ███████",
+    "  ██ ███ ██ ██   ██ ██   ██ ██    ██    ██   ██",
+    "   ███ ███  ██   ██ ██   ██ ██    ██    ██   ██",
+    "  RED TEAM · 9-phase kill chain · /engage <target> · /aegis",
+  ],
+  persona: `
 ═══════════════════════════════════════════════════════════════
-你现在是 ${AGENT_NAME}，一个自主红队 / 渗透测试作战 Agent。
+You are WRAITH, an autonomous red-team / penetration-testing agent.
 
-【身份】
-你是一名资深攻击性安全专家（OSCP/OSEP 级别）。你思考问题的方式是攻击者视角：
-资产测绘 → 攻击面枚举 → 漏洞识别 → 利用 → 提权 → 横向移动 → 权限维持 → 清理痕迹 → 出报告。
+[Identity]
+You are a senior offensive security expert (OSCP/OSEP level). You think like an attacker:
+asset mapping -> enumeration -> vuln identification -> exploitation -> privilege escalation
+-> lateral movement -> persistence -> cleanup -> reporting.
 
-【交战规则 · Rules of Engagement】
-- 你只在【获得明确授权】的目标上作业（授权渗透、内网靶场、CTF、自有资产、书面授权范围内）。
-- 每次开始一个新目标前，先用一句话与用户确认这是授权范围内的目标。
-- 绝不提供针对未授权真实目标的攻击、绝不做大规模无差别攻击、绝不协助逃避检测用于恶意目的。
+[Rules of Engagement]
+- Operate ONLY on explicitly authorized targets (authorized pentests, lab ranges, CTFs, your
+  own assets, or targets within a written scope). Confirm authorization in one line first.
+- Never help attack unauthorized real targets, never run mass/indiscriminate attacks, and
+  never help evade detection for malicious purposes.
 
-【作战方式】
-- 你手上有 10 个体系化工具：vulnerability_assessment / penetration_test / incident_response /
-  threat_hunt / malware_analysis / cloud_security_audit / compliance_audit /
-  security_hardening / detection_engineering / forensic_analysis。
-  它们背后是 817 个真实工作流（Nmap、Burp、sqlmap、BloodHound、Metasploit、Volatility 等）。
-- 用户说一个目标或需求时，主动选对工具、拿到工作流，再用 bash 一步步落地执行，边打边讲你在干什么。
-- 输出风格：简洁、术语精准、像终端里的黑客。关键发现用要点列出。命令给完整可复制的。
+[How you operate]
+- 10 structured tools backed by 817 real workflows (Nmap, Burp, sqlmap, BloodHound, Metasploit,
+  Volatility, etc.). Pick the right tool, pull its workflow, execute via bash, narrate as you go.
+- The user may just talk naturally ("grab the creds", "escalate to root", "pivot to the DC").
 
-【语言】默认用中文交流，命令和技术名词保留英文原文。
+[Engagement flow — one phase at a time, user-paced]
+Main line: RECON -> ACCESS -> EXECUTE -> PERSIST -> ESCALATE -> CREDS -> LATERAL -> IMPACT -> REPORT. Work ONE phase at a time:
+finish it, summarize findings as bullets, then STOP and wait for /next. Never race ahead.
+
+[Style] Concise, precise, like a hacker in a terminal. Bullet findings. Full copy-pasteable commands.
+[Language] English. Keep tool names and technical terms verbatim.
 ═══════════════════════════════════════════════════════════════
-`;
+`,
+  phases: [
+    { id: "RECON", name: "Recon", probe: "reconnaissance scanning enumeration nmap subdomain discovery",
+      brief: "map the attack surface — hosts, ports, services, subdomains, tech stack (T1046/T1595/T1083)",
+      order: "Use the recon phase of penetration_test. ENUMERATE ONLY — no exploitation yet." },
+    { id: "ACCESS", name: "Initial Access", probe: "exploitation web-application phishing initial-access exploit",
+      brief: "get the first foothold — exploit public apps, phishing, valid accounts (T1190/T1566/T1078)",
+      order: "Use vulnerability_assessment, then the exploitation phase of penetration_test, to gain initial access." },
+    { id: "EXECUTE", name: "Execution", probe: "command execution powershell scripting payload",
+      brief: "run code on the foothold — command/script execution, payloads (T1059)",
+      order: "Use penetration_test to establish reliable code execution / a stable shell." },
+    { id: "PERSIST", name: "Persistence", probe: "persistence backdoor webshell scheduled-task service registry",
+      brief: "survive reboots — webshell, scheduled task, service, account (T1505.003/T1053)",
+      order: "Use penetration_test to install persistence; note trigger and stealth." },
+    { id: "ESCALATE", name: "Priv Esc", probe: "privilege-escalation privesc token process-injection suid kernel",
+      brief: "become admin/root — kernel/service/misconfig, process injection (T1068/T1055)",
+      order: "Use penetration_test to enumerate privesc paths and escalate." },
+    { id: "CREDS", name: "Credentials", probe: "credential-access dumping mimikatz kerberoasting hash brute-force lsass",
+      brief: "harvest secrets — OS/AD creds, hashes, tickets, brute force (T1003/T1110/T1557)",
+      order: "Use penetration_test for credential access; list creds obtained and their use." },
+    { id: "LATERAL", name: "Lateral", probe: "lateral-movement pass-the-hash remote-execution pivot active-directory",
+      brief: "spread — pass-the-hash/tickets, remote exec, pivot, cloud accounts (T1021/T1078.004)",
+      order: "Use penetration_test for lateral movement; map controlled hosts and reach the objective." },
+    { id: "IMPACT", name: "Exfil / Impact", probe: "exfiltration collection cloud-storage ransomware encryption impact",
+      brief: "the objective — exfiltrate data or demonstrate impact (T1530/T1537/T1486)",
+      order: "Use penetration_test to stage/exfiltrate data or demonstrate impact (authorized scope only)." },
+    { id: "REPORT", name: "Report", probe: "report reporting documentation",
+      brief: "compile the red-team report",
+      order: "Compile findings: executive summary, attack path, vulns (severity+CVSS), repro steps, remediation. English, markdown." },
+  ],
+};
+
+const BLUE: Identity = {
+  name: "AEGIS",
+  theme: "aegis",
+  banner: [
+    "   █████  ███████  ██████  ██ ███████",
+    "  ██   ██ ██      ██       ██ ██     ",
+    "  ███████ █████   ██   ███ ██ ███████",
+    "  ██   ██ ██      ██    ██ ██      ██",
+    "  ██   ██ ███████  ██████  ██ ███████",
+    "  BLUE TEAM · 8-phase defense · /engage <host> · /wraith",
+  ],
+  persona: `
+═══════════════════════════════════════════════════════════════
+You are AEGIS, an autonomous blue-team / defensive-security agent.
+
+[Identity]
+You are a senior SOC analyst & DFIR responder. You think like a defender:
+detect -> triage -> contain -> investigate/hunt -> eradicate & recover -> report & harden.
+
+[Mission]
+- Protect authorized environments: detect intrusions, respond to incidents, hunt threats, do
+  forensics, and harden. Assume good-faith defense of the user's own / authorized systems.
+- Be evidence-driven: tie every conclusion to logs, IOCs, artifacts. Call out false positives.
+
+[How you operate]
+- 10 structured tools backed by 817 real workflows (Sigma, YARA, Splunk, Volatility, Zeek,
+  Velociraptor, etc.). Pick the right tool, pull its workflow, execute via bash, narrate as you go.
+- The user may just talk naturally ("triage this alert", "hunt for C2 beacons", "carve the memory dump").
+
+[Response flow — one phase at a time, user-paced]
+Main line: DETECT -> TRIAGE -> HUNT -> INVESTIGATE -> CONTAIN -> ERADICATE -> HARDEN -> REPORT. Work ONE phase at a time:
+finish it, summarize findings as bullets, then STOP and wait for /next. Never race ahead.
+
+[Style] Concise, precise, like an analyst at a SOC console. Bullet findings. Full copy-pasteable commands.
+[Language] English. Keep tool names and technical terms verbatim.
+═══════════════════════════════════════════════════════════════
+`,
+  phases: [
+    { id: "DETECT", name: "Detect", probe: "detection-engineering siem sigma detection alert anomaly",
+      brief: "spot the suspicious activity — alerts, anomalies, IOCs, affected assets",
+      order: "Use detection_engineering / threat_hunt to characterize the signal and scope impact. OBSERVE ONLY." },
+    { id: "TRIAGE", name: "Triage", probe: "incident-response triage soc severity classification",
+      brief: "assess severity, confirm true vs false positive, determine blast radius",
+      order: "Use incident_response triage: classify, rate severity, map impacted systems." },
+    { id: "HUNT", name: "Hunt", probe: "threat-hunting hunting ioc behavioral c2 beaconing",
+      brief: "proactively find the adversary everywhere — hypotheses, IOCs, TTPs",
+      order: "Use threat_hunt: run hypotheses, search IOCs/TTPs, find every affected host." },
+    { id: "INVESTIGATE", name: "Investigate", probe: "forensics dfir memory disk timeline artifact investigation",
+      brief: "forensics & root cause — timeline, patient zero, how they got in",
+      order: "Use forensic_analysis: disk/memory/log forensics, build the timeline, find root cause." },
+    { id: "CONTAIN", name: "Contain", probe: "containment isolation block quarantine incident-response",
+      brief: "stop the spread without destroying evidence — isolate, block IOCs, cut C2",
+      order: "Use incident_response containment: isolate hosts, block IOCs, preserve evidence." },
+    { id: "ERADICATE", name: "Eradicate", probe: "eradication recovery remediation malware-removal restore",
+      brief: "remove the threat and recover — kill footholds, restore, validate clean",
+      order: "Use incident_response eradication/recovery: remove footholds, restore systems, verify." },
+    { id: "HARDEN", name: "Harden", probe: "hardening cis-benchmark zero-trust mitigation patch",
+      brief: "prevent recurrence — patch the entry vector, harden configs, tighten controls",
+      order: "Use security_hardening: patch, harden configs (CIS/STIG/zero-trust), add detections." },
+    { id: "REPORT", name: "Report", probe: "report reporting lessons-learned documentation",
+      brief: "compile the incident report",
+      order: "Compile: executive summary, timeline, IOCs, root cause, impact, remediation & lessons. English, markdown." },
+  ],
+};
+
+// Split the 817 skills by team: blue keeps defensive / ops / forensics subdomains,
+// red keeps the rest (offense + technical domains). Skills with no subdomain go to both.
+const BLUE_SUBDOMAINS = new Set([
+  "threat-hunting", "threat-intelligence", "threat-detection", "soc-operations",
+  "security-operations", "incident-response", "digital-forensics", "malware-analysis",
+  "ransomware-defense", "phishing-defense", "deception-technology", "endpoint-security",
+  "zero-trust-architecture", "zero-trust", "compliance-governance", "governance-risk-compliance",
+  "privacy-compliance", "data-protection", "purple-team", "social-engineering-defense",
+]);
+const teamFilter = (team: "red" | "blue") =>
+  (sub: string): boolean => team === "blue" ? BLUE_SUBDOMAINS.has(sub) : !BLUE_SUBDOMAINS.has(sub);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SkillIndex — 分词倒排索引 + 加权搜索
@@ -94,6 +202,16 @@ interface SearchResult {
   body: string | null;
 }
 
+// Read the `subdomain:` field from a SKILL.md frontmatter (used for the red/blue skill split).
+function readSubdomain(path: string): string | null {
+  try {
+    const m = readFileSync(path, "utf-8").match(/^subdomain:\s*(.+)$/m);
+    return m ? m[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 class SkillIndex {
   /** dirName → 分词数组 */
   private segments: Map<string, string[]> = new Map();
@@ -102,8 +220,8 @@ class SkillIndex {
   /** 所有 dirName */
   private allDirs: string[] = [];
 
-  constructor(skillsPath: string) {
-    this.build(skillsPath);
+  constructor(skillsPath: string, subFilter?: (sub: string) => boolean) {
+    this.build(skillsPath, subFilter);
   }
 
   get count(): number {
@@ -162,12 +280,20 @@ class SkillIndex {
 
   // ── private ──────────────────────────────────────────────────────────────
 
-  private build(skillsPath: string): void {
+  private build(skillsPath: string, subFilter?: (sub: string) => boolean): void {
     if (!existsSync(skillsPath)) return;
 
-    const dirs = readdirSync(skillsPath, { withFileTypes: true })
+    let dirs = readdirSync(skillsPath, { withFileTypes: true })
       .filter(d => d.isDirectory())
       .map(d => d.name);
+
+    // Optional team filter: keep only skills whose SKILL.md subdomain passes.
+    if (subFilter) {
+      dirs = dirs.filter(dir => {
+        const sub = readSubdomain(join(skillsPath, dir, "SKILL.md"));
+        return sub === null ? true : subFilter(sub);
+      });
+    }
 
     this.allDirs = dirs;
 
@@ -660,8 +786,12 @@ function kwForensic(params: Record<string, unknown>): WeightedTerm[] {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function cybersec(pi: ExtensionAPI) {
+  // Pick side from env: WRAITH_TEAM=blue -> Aegis (defense), otherwise Wraith (offense).
+  const team: "red" | "blue" = process.env.WRAITH_TEAM === "blue" ? "blue" : "red";
+  const ID = team === "blue" ? BLUE : RED;
+
   const skillsAvailable = existsSync(SKILLS_PATH);
-  const index = skillsAvailable ? new SkillIndex(SKILLS_PATH) : new SkillIndex("");
+  const index = skillsAvailable ? new SkillIndex(SKILLS_PATH, teamFilter(team)) : new SkillIndex("");
 
   // ── 注册 10 个工具 ──────────────────────────────────────────────────────
 
@@ -848,7 +978,7 @@ export default function cybersec(pi: ExtensionAPI) {
   // ── /cybersec-list 命令 ─────────────────────────────────────────────────
 
   pi.registerCommand("arsenal", {
-    description: "🧰 军火库：浏览 / 搜索 817 个技能（可加关键词）",
+    description: "🧰 Arsenal: browse / search the 817-skill library (keyword optional)",
     handler: async (args, ctx) => {
       if (!skillsAvailable) {
         ctx.ui.notify(
@@ -880,104 +1010,147 @@ export default function cybersec(pi: ExtensionAPI) {
   // ── Agent 本体：人设 + 快捷命令 + 开场 ───────────────────────────────────
 
   let currentTarget = "";
+  let currentPhase = -1;   // -1 = not engaged; 0..N-1 = current phase index
+
+  // Phases come from the active identity (RED = attack chain, BLUE = defense chain).
+  const PHASES = ID.phases;
+
   const refreshStatus = (ctx: any) => {
     if (!ctx.hasUI) return;
-    ctx.ui.setStatus("wraith", `▓ ${AGENT_NAME} ▓ 目标: ${currentTarget || "未锁定"}`);
+    const phase = currentPhase >= 0
+      ? `Phase ${currentPhase + 1}/${PHASES.length} · ${PHASES[currentPhase].name}`
+      : "idle";
+    ctx.ui.setStatus("wraith", `▓ ${ID.name} ▓ ${phase} · ${currentTarget || "no target"}`);
   };
 
-  // 每一轮把红队人设注入 system prompt
+  // Drive one phase, then stop and wait for the user's /next.
+  const runPhase = (ctx: any) => {
+    const p = PHASES[currentPhase];
+    refreshStatus(ctx);
+    const last = currentPhase === PHASES.length - 1;
+    pi.sendUserMessage(
+      `[Engagement on ${currentTarget} — Phase ${currentPhase + 1}/${PHASES.length}: ${p.name}]\n` +
+      `Goal: ${p.brief}.\n${p.order}\n` +
+      (last
+        ? "This is the final phase — produce the report now."
+        : `Do ONLY this phase. When done, summarize findings as bullets, then STOP and tell the user to run /next for the ${PHASES[currentPhase + 1].name} phase. Do not advance on your own.`)
+    );
+  };
+
+  // Inject the red-team persona into the system prompt every turn
   pi.on("before_agent_start", async (event: any, _ctx: any) => {
-    return { systemPrompt: event.systemPrompt + "\n" + PERSONA };
+    return { systemPrompt: event.systemPrompt + "\n" + ID.persona };
   });
 
-  // 开场：banner + 状态栏 + 技能库状态
+  // On start: animated banner reveal (line by line) + status + skills status
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
-    ctx.ui.setWidget("wraith-banner", BANNER);
-    refreshStatus(ctx);
-    ctx.ui.notify(
-      skillsAvailable
-        ? `${AGENT_NAME} 上线 · 授权红队模式 · ${index.count} 个技能就绪`
-        : `${AGENT_NAME} 上线 · ⚠️ 技能库未找到（跑 ./install.sh 修复）`,
-      skillsAvailable ? "info" : "warning",
-    );
+    ctx.ui.setTheme?.(ID.theme);   // force this team's theme (red=matrix green, blue=aegis blue)
+    let i = 0;
+    const reveal = () => {
+      ctx.ui.setWidget("wraith-banner", ID.banner.slice(0, i));
+      if (i < ID.banner.length) { i++; setTimeout(reveal, 70); return; }
+      refreshStatus(ctx);
+      ctx.ui.notify(
+        skillsAvailable
+          ? `${ID.name} online · ${team === "blue" ? "defensive" : "authorized red-team"} mode · ${index.count} skills ready`
+          : `${ID.name} online · ⚠️ skills library not found (run ./install.sh)`,
+        skillsAvailable ? "info" : "warning",
+      );
+    };
+    reveal();
   });
 
-  // ── 快捷命令（红队黑话）：每条 = 一句预设好的作战指令 ──────────────────
-  // build(target) 生成发给自己的指令。needTarget 的命令没给目标就提示用法；
-  // 承接类命令（提权/横向等）自动复用上一次锁定的 currentTarget。
-  const RoE = "先用一句话与我确认这是授权范围内的目标，然后";
-  const RED_OPS: Array<{
-    name: string; desc: string; hint: string; needTarget: boolean;
-    build: (t: string) => string;
-  }> = [
-    // 🎯 一键流
-    { name: "pwn", desc: "🎯 全自动完整攻击链", hint: "<目标>", needTarget: true,
-      build: t => `对授权目标 ${t} 发起完整渗透。${RoE}用 penetration_test 按 侦察→漏洞识别→利用→提权→横向移动→清理 逐阶段推进，每阶段选对工具、拿工作流、用 bash 落地，边打边汇报。` },
-    { name: "recon", desc: "🛰️ 侦察 / 资产测绘", hint: "<目标>", needTarget: true,
-      build: t => `锁定目标 ${t}。${RoE}用 penetration_test 的侦察阶段：枚举资产、开放端口与服务指纹、子域名/目录、技术栈，发现用要点整理并给出攻击面建议。` },
-    // ⚔️ 杀伤链分阶段
-    { name: "scan", desc: "🔍 漏洞扫描", hint: "<目标>", needTarget: true,
-      build: t => `对授权目标 ${t} 做漏洞评估：用 vulnerability_assessment 扫 Web 漏洞、CVE、依赖与配置，按 CVSS 排序输出可利用点。` },
-    { name: "exploit", desc: "💥 打点拿 shell", hint: "[目标]", needTarget: false,
-      build: t => `对 ${t} 发起利用：用 penetration_test 的利用阶段，针对已发现漏洞选择 exploit（Metasploit / 手工 PoC）拿下初始立足点，给出完整命令。` },
-    { name: "loot", desc: "💰 搂凭据 / hash / 票据", hint: "", needTarget: false,
-      build: t => `在 ${t} 上做凭据窃取：用 penetration_test 抓取本地/域凭据、hash、Kerberos 票据、DPAPI/浏览器密钥，列出获取到的凭据与用途。` },
-    { name: "climb", desc: "⬆️ 本地提权", hint: "", needTarget: false,
-      build: t => `在 ${t} 上做权限提升：用 penetration_test 枚举提权路径（内核/服务/配置错误/SUID 等）并给出可落地的提权 exploit。` },
-    { name: "pivot", desc: "↔️ 横向移动", hint: "", needTarget: false,
-      build: t => `从 ${t} 横向移动：用 penetration_test 做横向（pass-the-hash / 票据、远程执行、跳板），扩大战果并画出已控主机拓扑。` },
-    { name: "ghost", desc: "👻 潜伏 / 持久化", hint: "", needTarget: false,
-      build: t => `在 ${t} 上建立持久化并隐蔽：用 penetration_test 部署持久化（计划任务/服务/后门）并做检测规避，说明触发方式与隐蔽性。` },
-    { name: "cleanup", desc: "🧹 清理痕迹", hint: "", needTarget: false,
-      build: t => `对 ${t} 做痕迹清理：用 penetration_test 的清理阶段，清理日志/文件/持久化残留，列出清理项与残留风险。` },
-    // 🎪 场景速攻
-    { name: "web", desc: "🕸️ 打站全套", hint: "<url>", needTarget: true,
-      build: t => `对授权目标 ${t} 做 Web 渗透全套：${RoE}先 vulnerability_assessment 找 Web 漏洞，再 penetration_test 针对 SQLi/XSS/文件上传/反序列化等逐个验证利用。` },
-    { name: "ad", desc: "🏰 打域全套 (AD)", hint: "<域/DC>", needTarget: true,
-      build: t => `对授权域 ${t} 做 AD 渗透：${RoE}用 penetration_test 做域侦察(BloodHound)、Kerberos 攻击(AS-REP/Kerberoasting)、ACL 滥用、DCSync，画出到 Domain Admin 的攻击路径。` },
-    { name: "cloud", desc: "☁️ 打云 (AWS/Azure/GCP)", hint: "<账号/环境>", needTarget: true,
-      build: t => `对授权云环境 ${t} 做云安全评估：用 cloud_security_audit 审 IAM、存储桶、网络 ACL、K8s，找可利用的错误配置与提权路径。` },
-    { name: "phish", desc: "🎣 钓鱼社工", hint: "<目标>", needTarget: true,
-      build: t => `针对授权目标 ${t} 设计钓鱼/社工方案：${RoE}用 penetration_test 的 phishing 相关技能，产出话术、载荷投递与凭据捕获方案（仅授权演练）。` },
+  // ── Commands: one main line, walked step by step. /engage starts it, /next advances. ──
+  const HELP: string[] = [
+    "",
+    `  ${ID.name} — ${team === "blue" ? "blue-team" : "red-team"} agent. One target, one main line, one step at a time.`,
+    "",
+    "  The engagement:",
+    "    /engage <target>   start — lock target, run Phase 1 (Recon), then stop",
+    "    /next              advance one phase  (Recon->Scan->Exploit->Escalate->Expand->Report)",
+    "    /report            jump straight to the report",
+    "",
+    "  Anytime:",
+    "    /arsenal [kw]      browse the 817-skill library",
+    "    /help              this help",
+    "",
+    `  You can also just talk:  "grab the creds"   "escalate to root"   "pivot to the DC"`,
+    "  Rule of engagement: authorized targets only.",
+    "",
   ];
 
-  for (const op of RED_OPS) {
-    pi.registerCommand(op.name, {
-      description: `${op.desc}${op.hint ? "  " + op.hint : ""}`,
-      handler: async (args, ctx) => {
-        const t = (args || "").trim() || currentTarget;
-        if (!t) {
-          ctx.ui.notify(
-            op.needTarget ? `用法: /${op.name} ${op.hint}` : `还没锁定目标，先 /recon <目标> 或 /pwn <目标>`,
-            "warning",
-          );
-          return;
-        }
-        currentTarget = t; refreshStatus(ctx);
-        pi.sendUserMessage(op.build(t));
-      },
-    });
-  }
+  // 🎯 /engage — start the engagement at Phase 1 (Recon)
+  pi.registerCommand("engage", {
+    description: "🎯 Start an engagement  <target>",
+    handler: async (args, ctx) => {
+      const t = (args || "").trim() || currentTarget;
+      if (!t) { ctx.ui.notify("Usage: /engage <target>   e.g. /engage 10.0.0.5", "warning"); return; }
+      currentTarget = t; currentPhase = 0;
+      runPhase(ctx);
+    },
+  });
 
-  // 📄 /report —— 一键出红队报告
+  // ⏭️ /next — advance to the next phase
+  pi.registerCommand("next", {
+    description: "⏭️ Advance to the next phase",
+    handler: async (_args, ctx) => {
+      if (currentPhase < 0 || !currentTarget) {
+        ctx.ui.notify("No engagement running. Start with /engage <target>.", "warning"); return;
+      }
+      if (currentPhase >= PHASES.length - 1) {
+        ctx.ui.notify("Engagement complete. Use /report, or /engage <target> for a new one.", "info"); return;
+      }
+      currentPhase += 1;
+      runPhase(ctx);
+    },
+  });
+
+  // 📄 /report — jump to the report phase
   pi.registerCommand("report", {
-    description: "📄 汇总本次发现，出红队报告",
-    handler: async (_args, _ctx) => {
-      pi.sendUserMessage(
-        `把本次会话到目前为止的所有发现整理成一份红队渗透报告：` +
-        `执行摘要、攻击路径、漏洞清单（含严重级别与 CVSS）、复现步骤、修复建议。用中文，markdown 排版。`
+    description: "📄 Write the red-team report",
+    handler: async (_args, ctx) => {
+      currentPhase = PHASES.length - 1;
+      if (!currentTarget) currentTarget = "this engagement";
+      runPhase(ctx);
+    },
+  });
+
+  // ❓ /help — how to use Wraith
+  pi.registerCommand("help", {
+    description: "❓ How to use this agent",
+    handler: async (_args, ctx) => { ctx.ui.notify(HELP.join("\n"), "info"); },
+  });
+
+  // 🗺️ /phases — show the whole main line and where you are
+  pi.registerCommand("phases", {
+    description: "🗺️ Show all phases of the main line",
+    handler: async (_args, ctx) => {
+      const lines = PHASES.map((p, i) => {
+        const mark = i === currentPhase ? "▶" : " ";
+        return ` ${mark} ${i + 1}. ${p.name} — ${p.brief}`;
+      });
+      ctx.ui.notify([`${ID.name} main line (${PHASES.length} phases):`, ...lines].join("\n"), "info");
+    },
+  });
+
+  // 📇 /list — list skills for the current phase, or /list <keyword>
+  pi.registerCommand("list", {
+    description: "📇 List skills for this phase (or /list <keyword>)",
+    handler: async (args, ctx) => {
+      const kw = (args || "").trim();
+      const probe = currentPhase >= 0 ? PHASES[currentPhase].probe : "";
+      const words = (kw || probe).split(/\s+/).filter(Boolean);
+      const hits = [...new Set(words.flatMap(word => index.list(word)))].sort();
+      if (hits.length === 0) { ctx.ui.notify(`No skills found${kw ? ` for "${kw}"` : ""}.`, "info"); return; }
+      const label = kw ? `"${kw}"` : (currentPhase >= 0 ? `Phase ${currentPhase + 1} · ${PHASES[currentPhase].name}` : "current phase");
+      ctx.ui.notify(
+        `${hits.length} skills for ${label}:\n` +
+        hits.slice(0, 30).join("\n") + (hits.length > 30 ? `\n... and ${hits.length - 30} more` : ""),
+        "info",
       );
     },
   });
 
-  // 🟢 /wraith —— 重新亮 banner
-  pi.registerCommand("wraith", {
-    description: "🟢 重新显示 Wraith banner",
-    handler: async (_args, ctx) => {
-      if (ctx.hasUI) ctx.ui.setWidget("wraith-banner", BANNER);
-    },
-  });
-
-  // /arsenal 军火库命令见上方（列出/搜索技能库）
+  // /arsenal command is defined above (browse/search the skills library)
 }

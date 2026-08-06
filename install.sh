@@ -1,39 +1,51 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════
-# Wraith 网安 agent — 一键安装（macOS / Kali Linux 通用）
+# Wraith (red team) + Aegis (blue team) security agents for pi.
+# One engine, two agents, picked by the `wraith` / `aegis` commands.
+# macOS / Kali Linux.  Plain `pi` stays clean.
 #
-#   用法:  cd ~/Wraith && ./install.sh
-#
-# 817 技能库已【随包自带】(cybersec-skills/skills/)，离线即用。
-# 本脚本只做两件事：检查 pi，把本目录作为 pi 包安装。
+#   cd ~/Wraith && ./install.sh   then:  source ~/.zshrc
 # ═══════════════════════════════════════════════════════════════
 set -e
 
 PKG_DIR="$(cd "$(dirname "$0")" && pwd)"
-echo "▓▓▓ Wraith 安装开始 ▓▓▓"
+PI_DIR="$HOME/.pi/agent"
+echo "▓▓▓ Wraith + Aegis install ▓▓▓"
 
-# 1. 检查 pi
-if ! command -v pi >/dev/null 2>&1; then
-  echo "❌ 没找到 pi。请先安装 pi coding agent：https://pi.dev"
-  echo "   （Kali 上通常: npm i -g @earendil-works/pi-coding-agent，需 Node ≥ 22）"
-  exit 1
-fi
+# 1. pi present?
+command -v pi >/dev/null 2>&1 || { echo "❌ pi not found — install pi first: https://pi.dev (needs Node ≥ 22)"; exit 1; }
 echo "✅ pi: $(pi --version)"
 
-# 2. 确认自带技能库
+# 2. vendored 817-skill library (self-contained; clone only if missing)
 SKILLS="$PKG_DIR/cybersec-skills/skills"
 if [ -d "$SKILLS" ]; then
-  echo "✅ 技能库(自带): $(ls "$SKILLS" | wc -l | tr -d ' ') 个技能"
+  echo "✅ skills (bundled): $(ls "$SKILLS" | wc -l | tr -d ' ')"
 else
-  echo "⚠️ 包内技能库缺失，从上游拉取到 ~/.pi/agent/cybersec-skills …"
-  git clone --depth 1 https://github.com/mukul975/Anthropic-Cybersecurity-Skills \
-    "$HOME/.pi/agent/cybersec-skills"
+  echo "⚠️ bundled skills missing — cloning to $PI_DIR/cybersec-skills"
+  git clone --depth 1 https://github.com/mukul975/Anthropic-Cybersecurity-Skills "$PI_DIR/cybersec-skills"
 fi
 
-# 3. 安装本包
-echo "⇩ 安装 Wraith 包…"
-pi install "$PKG_DIR"
+# 3. link themes into pi's discovery path so setTheme() finds them by name
+mkdir -p "$PI_DIR/themes"
+ln -sf "$PKG_DIR/themes/matrix.json" "$PI_DIR/themes/matrix.json"
+ln -sf "$PKG_DIR/themes/aegis.json"  "$PI_DIR/themes/aegis.json"
+echo "✅ themes linked: matrix (red), aegis (blue)"
+
+# 4. shell commands  wraith / aegis  (idempotent)
+RC="$HOME/.zshrc"; [ -n "$BASH_VERSION" ] && RC="$HOME/.bashrc"
+EXT="$PKG_DIR/extensions/wraith.ts"
+if ! grep -q "WRAITH_TEAM=red" "$RC" 2>/dev/null; then
+  cat >> "$RC" <<EOF
+
+# ── Wraith (red team) / Aegis (blue team) security agents ──
+wraith() { WRAITH_TEAM=red  pi -ne -e "$EXT" --theme matrix "\$@"; }
+aegis()  { WRAITH_TEAM=blue pi -ne -e "$EXT" --theme aegis  "\$@"; }
+EOF
+  echo "✅ added wraith/aegis functions to $RC"
+else
+  echo "✅ wraith/aegis already present in $RC"
+fi
 
 echo ""
-echo "▓▓▓ 完成 ▓▓▓ 直接敲  pi  进入 Wraith。"
-echo "试试： /recon <目标>   /pwn <目标>   /report   （绿主题: /theme matrix）"
+echo "▓▓▓ done ▓▓▓  run:  source $RC   then:  wraith   or   aegis"
+echo "(plain 'pi' stays a clean coding agent)"
