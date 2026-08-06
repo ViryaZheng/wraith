@@ -1,23 +1,19 @@
 /**
  * Skill retrieval engine — generic, team-agnostic.
  *
- * Tokenized inverted index over the 817-skill library + weighted search with an
- * offline synonym layer. This file has ONE job: turn structured keywords into the
- * best-matching SKILL.md workflow. It knows nothing about red vs blue — the agent
- * passes in its own team filter and synonym table.
+ * Tokenized inverted index over this product's own skill library + weighted search
+ * with an offline synonym layer. Skills are pre-split on disk (this folder ships only
+ * its own team's skills), so there is no runtime team filtering — the engine just
+ * indexes whatever SKILL.md folders live under ./skills.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type TObject } from "typebox";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 
-// Skills library: bundled at ../cybersec-skills/skills (offline), else ~/.pi/agent/cybersec-skills.
-const VENDORED_SKILLS = join(__dirname, "..", "cybersec-skills", "skills");
-export const SKILLS_PATH = existsSync(VENDORED_SKILLS)
-  ? VENDORED_SKILLS
-  : join(homedir(), ".pi", "agent", "cybersec-skills", "skills");
+// This product's own skills, bundled offline alongside the code.
+export const SKILLS_PATH = join(__dirname, "skills");
 
 export interface WeightedTerm { term: string; weight: number; }
 export interface SearchResult { dir: string; score: number; body: string | null; }
@@ -53,21 +49,14 @@ export const W_AUX = 1;       // environment, auxiliary
 
 // ── Index ────────────────────────────────────────────────────────────────────
 
-function readSubdomain(path: string): string | null {
-  try {
-    const m = readFileSync(path, "utf-8").match(/^subdomain:\s*(.+)$/m);
-    return m ? m[1].trim() : null;
-  } catch { return null; }
-}
-
 export class SkillIndex {
   private inverted: Map<string, string[]> = new Map();
   private allDirs: string[] = [];
   private synonyms: Record<string, string[]>;
 
-  constructor(skillsPath: string, subFilter?: (sub: string) => boolean, synonyms: Record<string, string[]> = {}) {
+  constructor(skillsPath: string, synonyms: Record<string, string[]> = {}) {
     this.synonyms = synonyms;
-    this.build(skillsPath, subFilter);
+    this.build(skillsPath);
   }
 
   get count(): number { return this.allDirs.length; }
@@ -116,15 +105,9 @@ export class SkillIndex {
     return results;
   }
 
-  private build(skillsPath: string, subFilter?: (sub: string) => boolean): void {
+  private build(skillsPath: string): void {
     if (!existsSync(skillsPath)) return;
-    let dirs = readdirSync(skillsPath, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
-    if (subFilter) {
-      dirs = dirs.filter(dir => {
-        const sub = readSubdomain(join(skillsPath, dir, "SKILL.md"));
-        return sub === null ? true : subFilter(sub);
-      });
-    }
+    const dirs = readdirSync(skillsPath, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
     this.allDirs = dirs;
     for (const dir of dirs) {
       for (const seg of dir.toLowerCase().split("-")) {

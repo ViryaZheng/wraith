@@ -2,23 +2,14 @@
  * WRAITH tools — the red team's offensive arsenal.
  *
  * 7 tools, each mapping structured params → weighted keywords for skill retrieval,
- * plus the red synonym table and the red/blue skill filter. Add a tool by dropping
- * a new entry in TOOLS; extend semantic reach by editing SYNONYMS.
+ * plus the red synonym table. This product ships only red skills (./skills), so there
+ * is no team filter. Add a tool by dropping a new entry in TOOLS; extend semantic
+ * reach by editing SYNONYMS.
  */
 
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { type ToolConfig, type WeightedTerm, w, W_PRIMARY, W_SECONDARY, W_AUX } from "./skill-index";
-
-// ── Skill split: Wraith keeps offensive + technical skills, drops blue defensive ones ──
-const BLUE_SUBDOMAINS = new Set([
-  "threat-hunting", "threat-intelligence", "threat-detection", "soc-operations",
-  "security-operations", "incident-response", "digital-forensics", "malware-analysis",
-  "ransomware-defense", "phishing-defense", "deception-technology", "endpoint-security",
-  "zero-trust-architecture", "zero-trust", "compliance-governance", "governance-risk-compliance",
-  "privacy-compliance", "data-protection", "purple-team", "social-engineering-defense",
-]);
-export const teamFilter = (sub: string): boolean => !BLUE_SUBDOMAINS.has(sub);
 
 // ── Offline semantic layer: hacker shorthand → canonical skill names ──
 export const SYNONYMS: Record<string, string[]> = {

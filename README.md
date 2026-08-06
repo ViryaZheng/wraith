@@ -12,7 +12,7 @@
 
 ---
 
-Two **separate products** — each with its own persona, its own tools, and its own slice of the [Anthropic Cybersecurity Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills) library (817 workflows, Apache 2.0). They share **no code** and evolve independently. One installer sets both up on `pi` while leaving plain `pi` untouched.
+Two **separate products** — each with its own persona, its own tools, and its own set of skills carved from the [Anthropic Cybersecurity Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills) library (Apache 2.0): **447 offensive workflows** ship with Wraith, **370 defensive** with Aegis. They share **no code and no skills** — each product carries only what its team needs. One installer sets both up on `pi` while leaving plain `pi` untouched.
 
 ```bash
 pi        # ⚪ plain pi — untouched, clean coding agent
@@ -78,16 +78,17 @@ wraith/  (this repo — two independent agent products)
 ├── wraith/               🔴 red team — a complete, standalone agent
 │   ├── index.ts          ·  identity, engagement memory, commands
 │   ├── tools.ts          ·  7 offensive tools + red synonyms
-│   └── skill-index.ts    ·  generic skill-retrieval engine
-├── aegis/                🔵 blue team — a complete, standalone agent (same 3-file shape)
-├── cybersec-skills/      817 SKILL.md workflows (vendored, offline, shared read-only)
+│   ├── skill-index.ts    ·  skill-retrieval engine
+│   └── skills/           ·  447 red SKILL.md workflows (vendored, offline)
+├── aegis/                🔵 blue team — a complete, standalone agent (same shape)
+│   └── skills/           ·  370 blue SKILL.md workflows
 ├── themes/               matrix.json (🔴) · aegis.json (🔵)
 └── install.sh            one-command installer
 ```
 
-- **Two independent products.** `wraith/` and `aegis/` share no code — each is a self-contained pi extension in three focused files. Edit one without touching the other; add a third agent by dropping in a new folder.
+- **Two independent products.** `wraith/` and `aegis/` share no code and no skills — each is a self-contained pi extension in three focused files plus its own skill library. Edit one without touching the other; add a third agent by dropping in a new folder.
 - **Tools split by team.** Red is offense-only, blue is defense-only; `cloud_security_audit` appears on both (attack-path view vs posture view).
-- **Skills split by team.** Red indexes offensive/technical subdomains (447 skills), blue defensive/ops/forensics (370), read from each SKILL.md's `subdomain`.
+- **Skills split by team, physically.** The 817-workflow library is partitioned by each SKILL.md's `subdomain` into 447 offensive (Wraith) + 370 defensive (Aegis). Each product ships only its own — red never carries blue.
 - **Retrieval.** Skill dir names are tokenized into an inverted index; each tool maps params to weighted keywords, plus a lightweight offline **synonym layer** so shorthand ("creds", "privesc", "beacon") reaches the canonical skill.
 - **Isolated config per agent.** Each runs under its own `~/.pi-wraith` / `~/.pi-aegis` (own theme; auth/models symlinked from `~/.pi/agent`). Plain `pi` stays untouched.
 

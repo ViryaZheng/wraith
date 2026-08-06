@@ -2,24 +2,14 @@
  * AEGIS tools — the blue team's defensive arsenal.
  *
  * 8 tools, each mapping structured params → weighted keywords for skill retrieval,
- * plus the blue synonym table and the blue skill filter. Add a tool by dropping a
- * new entry in TOOLS; extend semantic reach by editing SYNONYMS.
+ * plus the blue synonym table. This product ships only blue skills (./skills), so
+ * there is no team filter. Add a tool by dropping a new entry in TOOLS; extend
+ * semantic reach by editing SYNONYMS.
  */
 
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { type ToolConfig, type WeightedTerm, w, W_PRIMARY, W_SECONDARY, W_AUX } from "./skill-index";
-
-// ── Skill split: Aegis keeps blue defensive / ops / forensics subdomains ──
-const BLUE_SUBDOMAINS = new Set([
-  "threat-hunting", "threat-intelligence", "threat-detection", "soc-operations",
-  "security-operations", "incident-response", "digital-forensics", "malware-analysis",
-  "ransomware-defense", "phishing-defense", "deception-technology", "endpoint-security",
-  "zero-trust-architecture", "zero-trust", "compliance-governance", "governance-risk-compliance",
-  "privacy-compliance", "data-protection", "purple-team", "social-engineering-defense",
-]);
-// Skills with no subdomain belong to both teams (kept here too).
-export const teamFilter = (sub: string): boolean => BLUE_SUBDOMAINS.has(sub);
 
 // ── Offline semantic layer: defensive shorthand → canonical skill names ──
 export const SYNONYMS: Record<string, string[]> = {

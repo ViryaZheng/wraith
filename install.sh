@@ -57,11 +57,12 @@ else
   PKG="$WRAITH_HOME"
 fi
 
-# 3. Bundled 817-skill library ───────────────────────────────────────────────────
+# 3. Bundled skill libraries (each product ships only its own team's skills) ─────
 MAIN="$HOME/.pi/agent"
-S="$PKG/cybersec-skills/skills"
-if [ -d "$S" ]; then ok "skills library: $(ls "$S" | wc -l | tr -d ' ') workflows (bundled, offline)";
-else warn "skills not bundled — cloning to $MAIN/cybersec-skills"; git clone --depth 1 https://github.com/mukul975/Anthropic-Cybersecurity-Skills "$MAIN/cybersec-skills"; fi
+rc=$(find "$PKG/wraith/skills" -maxdepth 1 -type d 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
+bc=$(find "$PKG/aegis/skills"  -maxdepth 1 -type d 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
+if [ "$rc" -gt 0 ] && [ "$bc" -gt 0 ]; then ok "skills (bundled, offline): 🔴 $rc red · 🔵 $bc blue";
+else warn "skills not bundled — expected wraith/skills and aegis/skills in the repo"; fi
 
 # 4. Isolated config per agent (own theme so the header color matches; shared auth/models) ──
 for pair in "wraith:matrix:🔴" "aegis:aegis:🔵"; do

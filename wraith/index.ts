@@ -13,7 +13,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SkillIndex, registerSkillTool, w, W_PRIMARY, SKILLS_PATH } from "./skill-index";
-import { TOOLS, SYNONYMS, teamFilter } from "./tools";
+import { TOOLS, SYNONYMS } from "./tools";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Identity — WRAITH, red team. 9-phase kill chain (MITRE ATT&CK aligned).
@@ -134,7 +134,7 @@ function memoryDigest(state: State): string {
 
 export default function (pi: ExtensionAPI) {
   const skillsAvailable = existsSync(SKILLS_PATH);
-  const index = skillsAvailable ? new SkillIndex(SKILLS_PATH, teamFilter, SYNONYMS) : new SkillIndex("");
+  const index = skillsAvailable ? new SkillIndex(SKILLS_PATH, SYNONYMS) : new SkillIndex("");
   const state = loadState();
 
   for (const tool of TOOLS) registerSkillTool(pi, index, tool);
