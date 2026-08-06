@@ -22,7 +22,7 @@ import { TOOLS, SYNONYMS } from "./tools";
 interface Phase { id: string; name: string; brief: string; order: string; probe: string; }
 
 const NAME = "WRAITH";
-const THEME = "matrix";
+const THEME = "wraith";
 const BANNER = [
   "  ██     ██ ██████   █████  ██ ████████ ██   ██",
   "  ██     ██ ██   ██ ██   ██ ██    ██    ██   ██",

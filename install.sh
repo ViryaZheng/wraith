@@ -65,7 +65,7 @@ if [ "$rc" -gt 0 ] && [ "$bc" -gt 0 ]; then ok "skills (bundled, offline): 🔴 
 else warn "skills not bundled — expected wraith/skills and aegis/skills in the repo"; fi
 
 # 4. Isolated config per agent (own theme so the header color matches; shared auth/models) ──
-for pair in "wraith:matrix:🔴" "aegis:aegis:🔵"; do
+for pair in "wraith:wraith:🔴" "aegis:aegis:🔵"; do
   name=${pair%%:*}; rest=${pair#*:}; theme=${rest%%:*}; icon=${rest##*:}; dir="$HOME/.pi-$name"
   mkdir -p "$dir/themes"
   cat > "$dir/settings.json" <<EOF

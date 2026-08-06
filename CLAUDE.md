@@ -37,7 +37,7 @@
 │   └── skills/           ·  447 个红队 SKILL.md（vendored，离线）+ LICENSE/NOTICE
 ├── aegis/                🔵 蓝队产品（同结构：3 文件 + 自己的 skills/）
 │   └── skills/           ·  370 个蓝队 SKILL.md
-├── themes/               matrix.json(🔴) · aegis.json(🔵)
+├── themes/               wraith.json(🔴) · aegis.json(🔵)
 ├── install.sh            一键安装器（彩色 banner / 远程自 clone / 独立配置）
 ├── README.md             GitHub 门面（Wraith + Aegis 品牌）
 └── CLAUDE.md             本文件

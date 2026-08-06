@@ -16,7 +16,7 @@ Two **separate products** — each with its own persona, its own tools, and its 
 
 ```bash
 pi        # ⚪ plain pi — untouched, clean coding agent
-wraith    # 🔴 red team  — matrix green — 9-phase kill chain — 7 offensive tools
+wraith    # 🔴 red team  — green         — 9-phase kill chain — 7 offensive tools
 aegis     # 🔵 blue team — ice blue     — 8-phase defense    — 8 defensive tools
 ```
 
@@ -82,7 +82,7 @@ wraith/  (this repo — two independent agent products)
 │   └── skills/           ·  447 red SKILL.md workflows (vendored, offline)
 ├── aegis/                🔵 blue team — a complete, standalone agent (same shape)
 │   └── skills/           ·  370 blue SKILL.md workflows
-├── themes/               matrix.json (🔴) · aegis.json (🔵)
+├── themes/               wraith.json (🔴) · aegis.json (🔵)
 └── install.sh            one-command installer
 ```
 
