@@ -198,7 +198,7 @@ export default function (pi: ExtensionAPI) {
   ];
 
   pi.registerCommand("engage", {
-    description: "🎯 Start an engagement  <target>",
+    description: "Start an engagement  <target>",
     handler: async (args, ctx) => {
       const t = (args || "").trim() || state.target;
       if (!t) { ctx.ui.notify("Usage: /engage <target>   e.g. /engage 10.0.0.5", "warning"); return; }
@@ -208,7 +208,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("next", {
-    description: "⏭️ Advance to the next phase",
+    description: "Advance to the next phase",
     handler: async (_args, ctx) => {
       if (state.phase < 0 || !state.target) { ctx.ui.notify("No engagement running. Start with /engage <target>.", "warning"); return; }
       if (state.phase >= PHASES.length - 1) { ctx.ui.notify("Engagement complete. Use /report, or /engage <target> for a new one.", "info"); return; }
@@ -218,7 +218,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("report", {
-    description: "📄 Write the red-team report",
+    description: "Write the red-team report",
     handler: async (_args, ctx) => {
       state.phase = PHASES.length - 1;
       if (!state.target) state.target = "this engagement";
@@ -228,7 +228,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("phases", {
-    description: "🗺️ Show all phases of the kill chain",
+    description: "Show all phases of the kill chain",
     handler: async (_args, ctx) => {
       const lines = PHASES.map((p, i) => ` ${i === state.phase ? "▶" : " "} ${i + 1}. ${p.name} — ${p.brief}`);
       ctx.ui.notify([`${NAME} kill chain (${PHASES.length} phases):`, ...lines].join("\n"), "info");
@@ -236,12 +236,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("help", {
-    description: "❓ How to use this agent",
+    description: "How to use this agent",
     handler: async (_args, ctx) => { ctx.ui.notify(HELP.join("\n"), "info"); },
   });
 
   pi.registerCommand("log", {
-    description: "📝 Add a finding to the evidence chain",
+    description: "Add a finding to the evidence chain",
     handler: async (args, ctx) => {
       const note = (args || "").trim();
       if (!note) { ctx.ui.notify("Usage: /log <finding>   e.g. /log SMB signing disabled on 10.0.0.5", "warning"); return; }
@@ -252,7 +252,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("loot", {
-    description: "💰 Record / list captured creds, hosts, shells",
+    description: "Record / list captured creds, hosts, shells",
     handler: async (args, ctx) => {
       const item = (args || "").trim();
       if (!item) {
@@ -265,7 +265,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("evidence", {
-    description: "🧾 Show the full engagement memory",
+    description: "Show the full engagement memory",
     handler: async (_args, ctx) => {
       const lines = [`${NAME} engagement memory`, "",
         `Target: ${state.target || "(none)"}`,
@@ -279,7 +279,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("reset", {
-    description: "♻️ Clear the engagement (new target)",
+    description: "Clear the engagement (new target)",
     handler: async (_args, ctx) => {
       state.target = ""; state.phase = -1; state.evidence = []; state.loot = []; saveState(state);
       refreshStatus(ctx);
@@ -288,7 +288,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("find", {
-    description: "🔎 Semantic skill search: /find <what you want to do>",
+    description: "Semantic skill search: /find <what you want to do>",
     handler: async (args, ctx) => {
       const q = (args || "").trim();
       if (!q) { ctx.ui.notify("Usage: /find <query>   e.g. /find dump creds from the DC", "warning"); return; }
@@ -301,7 +301,7 @@ export default function (pi: ExtensionAPI) {
 
   // /arsenal — browse skills. No arg: current phase's skills (or all when idle). With keyword: substring search.
   pi.registerCommand("arsenal", {
-    description: "🧰 Browse skills — this phase, or matching a keyword",
+    description: "Browse skills — this phase, or matching a keyword",
     handler: async (args, ctx) => {
       if (!skillsAvailable) { ctx.ui.notify(`Skills library not found at ${SKILLS_PATH} (run ./install.sh).`, "error"); return; }
       const kw = (args || "").trim();
