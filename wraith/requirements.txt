@@ -1,0 +1,33 @@
+# Wraith 🔴 — optional Python deps for the skills' fallback scripts (scripts/agent.py).
+# Kali-native commands are the primary path; install these only if you want the
+# agent.py fallbacks to run:  pip install -r wraith/requirements.txt
+requests
+urllib3
+pycryptodome
+cryptography
+defusedxml
+dnspython
+lxml
+PyYAML
+paramiko
+scapy
+python-nmap
+shodan
+ldap3
+neo4j
+networkx
+boto3
+azure-identity
+google-api-python-client
+kubernetes
+okta
+napalm
+netmiko
+fido2
+bleak
+PyJWT
+pandas
+numpy
+scikit-learn
+SQLAlchemy
+flask

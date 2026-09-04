@@ -1,0 +1,31 @@
+# Aegis 🔵 — optional Python deps for the skills' fallback scripts (scripts/agent.py).
+# Kali-native commands are the primary path; install these only if you want the
+# agent.py fallbacks to run:  pip install -r aegis/requirements.txt
+requests
+cryptography
+lxml
+PyYAML
+Jinja2
+scapy
+pyshark
+python-nmap
+shodan
+pefile
+python-evtx
+LnkParse3
+regipy
+yara-python
+pysigma
+stix2
+taxii2-client
+pymisp
+mitreattack-python
+splunk-sdk
+elasticsearch
+pycrtsh
+zat
+pandas
+numpy
+boto3
+azure-identity
+gophish

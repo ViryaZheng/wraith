@@ -51,7 +51,12 @@ asset mapping -> enumeration -> vuln identification -> exploitation -> privilege
 - Your offensive tools: penetration_test, vulnerability_assessment, exploit_development,
   password_attack, c2_operations, social_engineering, cloud_security_audit — backed by ~450
   attack workflows (Nmap, Burp, sqlmap, BloodHound, mimikatz, Impacket, Sliver, gophish, etc.).
-  You do NOT do defense (no IR/hunt/forensics); that is Aegis. Pick a tool, pull its workflow, run via bash.
+  You do NOT do defense (no IR/hunt/forensics); that is Aegis.
+- EXECUTE, don't narrate: pick a tool, pull its workflow, then ACTUALLY RUN the commands via the
+  bash tool against the authorized target — one step at a time, reading the real output before
+  deciding the next command. Prefer the Kali-native commands; if a tool is missing, install it or
+  fall back to the skill's scripts/agent.py. Never just print commands for the user to run.
+- Do nothing on the target until authorization is confirmed for it (the engagement memory says so).
 - Log every meaningful finding with /log and every captured secret/host with /loot — this
   engagement memory persists and feeds the final report.
 - The user may just talk naturally ("grab the creds", "escalate to root", "pivot to the DC").
@@ -100,15 +105,15 @@ const PHASES: Phase[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface Evidence { phase: string; note: string; }
-interface State { target: string; phase: number; evidence: Evidence[]; loot: string[]; }
+interface State { target: string; phase: number; authorized: boolean; evidence: Evidence[]; loot: string[]; }
 
 const STATE_FILE = join(process.cwd(), ".wraith.json");
 
 function loadState(): State {
   try {
     const s = JSON.parse(readFileSync(STATE_FILE, "utf-8"));
-    return { target: s.target ?? "", phase: s.phase ?? -1, evidence: s.evidence ?? [], loot: s.loot ?? [] };
-  } catch { return { target: "", phase: -1, evidence: [], loot: [] }; }
+    return { target: s.target ?? "", phase: s.phase ?? -1, authorized: s.authorized ?? false, evidence: s.evidence ?? [], loot: s.loot ?? [] };
+  } catch { return { target: "", phase: -1, authorized: false, evidence: [], loot: [] }; }
 }
 function saveState(state: State): void {
   try { writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch { /* best-effort */ }
@@ -116,9 +121,12 @@ function saveState(state: State): void {
 
 /** Compact digest injected into the system prompt so the agent remembers the engagement. */
 function memoryDigest(state: State): string {
-  if (state.phase < 0 && state.evidence.length === 0 && state.loot.length === 0) return "";
+  if (!state.target && state.evidence.length === 0 && state.loot.length === 0) return "";
   const lines = ["", "[Engagement memory — persisted across turns]"];
   if (state.target) lines.push(`Target: ${state.target}`);
+  lines.push(state.authorized
+    ? `Authorization: CONFIRMED — you may execute against ${state.target}.`
+    : `Authorization: NOT CONFIRMED — do not run anything on the target yet; wait for the user to confirm via /engage.`);
   if (state.phase >= 0) lines.push(`Phase: ${state.phase + 1}/${PHASES.length} · ${PHASES[state.phase].name}`);
   if (state.evidence.length) {
     lines.push("Evidence chain (latest first):");
@@ -182,7 +190,7 @@ export default function (pi: ExtensionAPI) {
   const HELP = [
     "", `  ${NAME} — red-team agent. One target, one kill chain, one step at a time.`, "",
     "  The engagement:",
-    "    /engage <target>   start — lock target, run Phase 1 (Recon), then stop",
+    "    /engage <target>   lock target (asks to confirm authorization); /engage again starts Phase 1",
     "    /next              advance one phase along the 9-phase kill chain",
     "    /phases · /report  show the kill chain · jump to the report", "",
     "  Memory:",
@@ -198,12 +206,30 @@ export default function (pi: ExtensionAPI) {
   ];
 
   pi.registerCommand("engage", {
-    description: "Start an engagement  <target>",
+    description: "Lock a target (with <target>), then confirm authorization to start",
     handler: async (args, ctx) => {
-      const t = (args || "").trim() || state.target;
-      if (!t) { ctx.ui.notify("Usage: /engage <target>   e.g. /engage 10.0.0.5", "warning"); return; }
-      state.target = t; state.phase = 0; saveState(state);
-      runPhase(ctx);
+      const t = (args || "").trim();
+      // Step 1: a target argument arms the engagement and REQUIRES authorization before anything runs.
+      if (t) {
+        state.target = t; state.phase = -1; state.authorized = false;
+        state.evidence = []; state.loot = []; saveState(state);
+        refreshStatus(ctx);
+        ctx.ui.notify(
+          `Target locked: ${t}\n` +
+          `⚠ Authorization required — engage ONLY authorized targets (pentest / lab / CTF / your own assets).\n` +
+          `Run /engage (no argument) to CONFIRM authorization and start Phase 1, or /reset to cancel.`,
+          "warning");
+        return;
+      }
+      // Step 2: no argument confirms authorization for the armed target and starts Phase 1.
+      if (!state.target) { ctx.ui.notify("Usage: /engage <target>   e.g. /engage 10.0.0.5", "warning"); return; }
+      if (!state.authorized) {
+        state.authorized = true; state.phase = 0; saveState(state);
+        ctx.ui.notify(`Authorization confirmed for ${state.target}. Starting engagement.`, "info");
+        runPhase(ctx);
+        return;
+      }
+      ctx.ui.notify(`Engagement already running on ${state.target} (Phase ${state.phase + 1}). Use /next to advance.`, "info");
     },
   });
 
@@ -281,7 +307,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("reset", {
     description: "Clear the engagement (new target)",
     handler: async (_args, ctx) => {
-      state.target = ""; state.phase = -1; state.evidence = []; state.loot = []; saveState(state);
+      state.target = ""; state.phase = -1; state.authorized = false; state.evidence = []; state.loot = []; saveState(state);
       refreshStatus(ctx);
       ctx.ui.notify("Engagement cleared. Start a new one with /engage <target>.", "info");
     },

@@ -49,7 +49,12 @@ detect -> triage -> contain -> investigate/hunt -> eradicate & recover -> report
 - Your defensive tools: incident_response, threat_hunt, malware_analysis, forensic_analysis,
   detection_engineering, security_hardening, compliance_audit, cloud_security_audit — backed by
   ~370 defense workflows (Sigma, YARA, Splunk, Volatility, Zeek, Velociraptor, etc.). You do NOT
-  run offensive pentests; that is Wraith. Pick a tool, pull its workflow, run via bash.
+  run offensive pentests; that is Wraith.
+- EXECUTE, don't narrate: pick a tool, pull its workflow, then ACTUALLY RUN the commands via the
+  bash tool against the in-scope system — one step at a time, reading the real output before
+  deciding the next command. Prefer the Kali-native tools; if one is missing, install it or fall
+  back to the skill's scripts/agent.py. Never just print commands for the user to run.
+- Do nothing on the system until authorization is confirmed for it (the incident memory says so).
 - Log every confirmed finding with /log and every indicator with /ioc — this incident memory
   persists and feeds the final report and new detections.
 - The user may just talk naturally ("triage this alert", "hunt for C2 beacons", "carve the memory dump").
@@ -95,15 +100,15 @@ const PHASES: Phase[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface Evidence { phase: string; note: string; }
-interface State { target: string; phase: number; evidence: Evidence[]; iocs: string[]; }
+interface State { target: string; phase: number; authorized: boolean; evidence: Evidence[]; iocs: string[]; }
 
 const STATE_FILE = join(process.cwd(), ".aegis.json");
 
 function loadState(): State {
   try {
     const s = JSON.parse(readFileSync(STATE_FILE, "utf-8"));
-    return { target: s.target ?? "", phase: s.phase ?? -1, evidence: s.evidence ?? [], iocs: s.iocs ?? [] };
-  } catch { return { target: "", phase: -1, evidence: [], iocs: [] }; }
+    return { target: s.target ?? "", phase: s.phase ?? -1, authorized: s.authorized ?? false, evidence: s.evidence ?? [], iocs: s.iocs ?? [] };
+  } catch { return { target: "", phase: -1, authorized: false, evidence: [], iocs: [] }; }
 }
 function saveState(state: State): void {
   try { writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch { /* best-effort */ }
@@ -111,9 +116,12 @@ function saveState(state: State): void {
 
 /** Compact digest injected into the system prompt so the agent remembers the incident. */
 function memoryDigest(state: State): string {
-  if (state.phase < 0 && state.evidence.length === 0 && state.iocs.length === 0) return "";
+  if (!state.target && state.evidence.length === 0 && state.iocs.length === 0) return "";
   const lines = ["", "[Incident memory — persisted across turns]"];
   if (state.target) lines.push(`Scope: ${state.target}`);
+  lines.push(state.authorized
+    ? `Authorization: CONFIRMED — you may execute against ${state.target}.`
+    : `Authorization: NOT CONFIRMED — do not run anything on the system yet; wait for the user to confirm via /engage.`);
   if (state.phase >= 0) lines.push(`Phase: ${state.phase + 1}/${PHASES.length} · ${PHASES[state.phase].name}`);
   if (state.evidence.length) {
     lines.push("Evidence chain (latest first):");
@@ -177,7 +185,7 @@ export default function (pi: ExtensionAPI) {
   const HELP = [
     "", `  ${NAME} — blue-team agent. One scope, one response chain, one step at a time.`, "",
     "  The response:",
-    "    /engage <scope>    start — lock scope, run Phase 1 (Detect), then stop",
+    "    /engage <scope>    lock scope (asks to confirm authorization); /engage again starts Phase 1",
     "    /next              advance one phase along the 8-phase defense chain",
     "    /phases · /report  show the defense chain · jump to the report", "",
     "  Memory:",
@@ -193,12 +201,30 @@ export default function (pi: ExtensionAPI) {
   ];
 
   pi.registerCommand("engage", {
-    description: "Start an incident response  <scope>",
+    description: "Lock a scope (with <scope>), then confirm authorization to start",
     handler: async (args, ctx) => {
-      const t = (args || "").trim() || state.target;
-      if (!t) { ctx.ui.notify("Usage: /engage <scope>   e.g. /engage host-42", "warning"); return; }
-      state.target = t; state.phase = 0; saveState(state);
-      runPhase(ctx);
+      const t = (args || "").trim();
+      // Step 1: a scope argument arms the response and REQUIRES authorization before anything runs.
+      if (t) {
+        state.target = t; state.phase = -1; state.authorized = false;
+        state.evidence = []; state.iocs = []; saveState(state);
+        refreshStatus(ctx);
+        ctx.ui.notify(
+          `Scope locked: ${t}\n` +
+          `⚠ Authorization required — operate ONLY on systems you are authorized to defend.\n` +
+          `Run /engage (no argument) to CONFIRM authorization and start Phase 1, or /reset to cancel.`,
+          "warning");
+        return;
+      }
+      // Step 2: no argument confirms authorization for the armed scope and starts Phase 1.
+      if (!state.target) { ctx.ui.notify("Usage: /engage <scope>   e.g. /engage host-42", "warning"); return; }
+      if (!state.authorized) {
+        state.authorized = true; state.phase = 0; saveState(state);
+        ctx.ui.notify(`Authorization confirmed for ${state.target}. Starting response.`, "info");
+        runPhase(ctx);
+        return;
+      }
+      ctx.ui.notify(`Response already running on ${state.target} (Phase ${state.phase + 1}). Use /next to advance.`, "info");
     },
   });
 
@@ -276,7 +302,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("reset", {
     description: "Clear the incident (new scope)",
     handler: async (_args, ctx) => {
-      state.target = ""; state.phase = -1; state.evidence = []; state.iocs = []; saveState(state);
+      state.target = ""; state.phase = -1; state.authorized = false; state.evidence = []; state.iocs = []; saveState(state);
       refreshStatus(ctx);
       ctx.ui.notify("Incident cleared. Start a new one with /engage <scope>.", "info");
     },

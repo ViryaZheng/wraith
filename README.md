@@ -14,6 +14,8 @@
 
 Two **separate products** — each with its own persona, its own tools, and its own set of skills carved from the [Anthropic Cybersecurity Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills) library (Apache 2.0): **447 offensive workflows** ship with Wraith, **370 defensive** with Aegis. They share **no code and no skills** — each product carries only what its team needs. One installer sets both up on `pi` while leaving plain `pi` untouched.
 
+**They run the skills, they don't just recite them.** On Kali, each agent selects the right workflow, checks the toolchain it needs, then **actually executes the Kali-native commands** (nmap, sqlmap, BloodHound, Volatility, YARA, …), reads the real output, and reasons forward — one phase at a time, at your pace. Every skill also ships a Python `scripts/agent.py` used as a fallback when a native tool is missing.
+
 ```bash
 pi        # ⚪ plain pi — untouched, clean coding agent
 wraith    # 🔴 red team  — green         — 9-phase kill chain — 7 offensive tools
@@ -34,15 +36,20 @@ cd ~/Wraith && ./install.sh
 source ~/.zshrc
 ```
 
-The installer sets up an isolated config per agent, wires the `wraith` / `aegis` shell commands, links the themes, and confirms the bundled 817-skill library. On Kali the underlying tools (nmap/sqlmap/metasploit/bloodhound…) are already there. Update later with `git -C ~/Wraith pull`.
+The installer sets up an isolated config per agent, wires the `wraith` / `aegis` shell commands, links the themes, confirms the bundled 817-skill library, **checks your Kali toolchain** (and prints the `apt install` line for anything missing), and drops an optional API-keys template at `~/.wraith/keys.env`. On Kali the underlying tools (nmap/sqlmap/metasploit/bloodhound…) are already there. It also offers to `pip install` the optional Python fallback deps (`wraith/requirements.txt`, `aegis/requirements.txt`) — skip it unless you want the `agent.py` fallbacks. Update later with `git -C ~/Wraith pull`.
+
+**API keys (optional):** a few skills enrich results from external services (Shodan, VirusTotal, HIBP, MISP, Splunk…). Fill in only the ones you need in `~/.wraith/keys.env` — the `wraith` / `aegis` commands source it automatically. Everything works without keys.
 
 ## How each agent works — one phase at a time, you set the pace
 
 ```
-/engage <target>   lock target, run phase 1, then STOP
+/engage <target>   lock the target — asks you to confirm authorization
+/engage            (no arg) confirm authorization → runs phase 1, then STOPs
 /next              advance one phase (it summarizes, then waits for you again)
 /report            jump to the report
 ```
+
+Nothing runs against a target until you confirm authorization: `/engage <target>` arms it, a second `/engage` confirms and starts. Each phase then **runs** its tools, reads the output, and stops for your `/next`.
 
 **🔴 Wraith — 9-phase kill chain (MITRE ATT&CK aligned)**
 `RECON → ACCESS → EXECUTE → PERSIST → ESCALATE → CREDS → LATERAL → IMPACT → REPORT`
@@ -89,12 +96,13 @@ wraith/  (this repo — two independent agent products)
 - **Two independent products.** `wraith/` and `aegis/` share no code and no skills — each is a self-contained pi extension in three focused files plus its own skill library. Edit one without touching the other; add a third agent by dropping in a new folder.
 - **Tools split by team.** Red is offense-only, blue is defense-only; `cloud_security_audit` appears on both (attack-path view vs posture view).
 - **Skills split by team, physically.** The 817-workflow library is partitioned by each SKILL.md's `subdomain` into 447 offensive (Wraith) + 370 defensive (Aegis). Each product ships only its own — red never carries blue.
-- **Retrieval.** Skill dir names are tokenized into an inverted index; each tool maps params to weighted keywords, plus a lightweight offline **synonym layer** so shorthand ("creds", "privesc", "beacon") reaches the canonical skill.
+- **Retrieval.** Skill folder names **and** each SKILL.md's frontmatter (`description`, `tags`, `subdomain`, `mitre_attack`) are tokenized into a weighted inverted index, plus an offline **synonym layer** so shorthand ("creds", "privesc", "beacon") reaches the canonical skill. You can search by **ATT&CK technique id** too — `/find T1003` finds the credential-dumping skills.
+- **Execution + preflight.** When a tool selects a skill, it runs a read-only `command -v` **preflight** over the Kali tools that workflow references (reporting present/missing with an `apt install` hint), then hands the agent an explicit *execute* directive: run the native commands via bash, read real output, advance — never just print them.
 - **Isolated config per agent.** Each runs under its own `~/.pi-wraith` / `~/.pi-aegis` (own theme; auth/models symlinked from `~/.pi/agent`). Plain `pi` stays untouched.
 
 ## Rules of engagement
 
-Both agents are scoped to **authorized targets only** (authorized pentests / your own or lab systems / CTFs), with authorization confirmed before acting. Use responsibly.
+Both agents are scoped to **authorized targets only** (authorized pentests / your own or lab systems / CTFs). Authorization is enforced by a two-step `/engage` gate — the agent will not run anything against a target until you confirm — and the persona refuses unauthorized real targets, mass/indiscriminate attacks, and detection-evasion for malicious purposes. These agents execute real offensive/defensive commands: run them only where you have written permission. Use responsibly.
 
 ## License
 

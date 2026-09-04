@@ -2,17 +2,30 @@
 
 两个**物理独立、各自自包含的 pi 网安 agent 产品**,配一个一键安装器:🔴 **Wraith**(红队/进攻)+ 🔵 **Aegis**(蓝队/防守)。普通 `pi` 保持纯净。项目在 `~/Wraith`。
 
-> 私有仓库：https://github.com/ViryaZheng/wraith ｜ 版本：**v0.4.0**
+> 私有仓库：https://github.com/ViryaZheng/wraith ｜ 版本：**v0.5.0**
 > 产品定位对标 [oh-my-pi](https://github.com/can1357/oh-my-pi)（can1357 的 pi 增强分叉）——**仅作质量标杆,不占用其品牌**。底座仍是 plain pi。
 
 ## PROGRESS
 
-**Current**（2026-08-06，v0.4.0）：在 v0.2.0（拆两独立体 + 四项能力）、v0.3.0（代码清爽化 + 一键安装器）基础上，**把 817 技能库物理切分到两个产品**，两个产品都功能验证通过：
+**Current**（2026-09-04，v0.5.0）：**从"念说明书"升级为"真执行"的 agent**（B 级：真执行、用户控节奏；离线 harness 全验证通过，红蓝对称）。核心五步：
+- **检索用上 frontmatter**（`skill-index.ts`）：原来只切目录名建倒排；现在 `build()` 解析每篇 SKILL.md 的 frontmatter，把 `description`/`tags`/`subdomain`/`mitre_attack` 分级进索引（folder-name×3、meta×2、ATT&CK 精确×4、子串×1），`getMeta()` 缓存供工具用。`/find T1003` 可按 ATT&CK 技术号命中。新增 `SkillMeta` 接口 + `parseFrontmatter()`。
+- **工具从"返回文本"变"执行链"**（`skill-index.ts` 的 `registerSkillTool`/`formatOutput`）：命中 skill 后跑 `preflight()`——从 skill 正文提取引用到的 Kali 工具名，`command -v` 逐个检测（**关键坑：`for` 循环末尾工具未装会让整条命令非零退出，execSync 抛异常吞掉 stdout；用 `; true` 兜底**），输出 = skill 正文 + 环境预检报告（present/missing + apt 提示）+ **EXECUTE 指令**（要模型用 bash 真跑、读真实输出、别只贴命令）。`details` 带 `toolsPresent/toolsMissing`。
+- **人格强化 + 授权门**（`index.ts`）：PERSONA 加"EXECUTE, don't narrate"+"未授权前不动手"；`/engage` 改**两步授权门**——`/engage <目标>` 只锁定+要求授权（phase=-1、authorized=false、0 条消息），第二次 `/engage`（无参）确认授权才 phase=0 跑起来；`State` 加 `authorized`，`memoryDigest` 每轮显示授权状态，`/reset` 一并清。命令数仍 **11**（没加新命令）。
+- **Kali 适配**：新增 `wraith/requirements.txt`/`aegis/requirements.txt`（agent.py 回退依赖，可选装，从脚本 import 实扫映射 pip 名）+ `keys.env.example`（外部服务 API key，实扫脚本 env 变量名后精选）。`install.sh` 加 Kali 工具链检测（present/missing + apt 提示）、可选 `pip install`、拷 `keys.env` 到 `~/.wraith/`；shell 函数改成**子 shell 里 source `~/.wraith/keys.env`** 再起 pi（不污染交互 env）；shell 块改为**每次刷新**（awk 删旧块再追加），旧用户重装能拿到新函数、幂等无重复。
+- **分享打磨**：README 重定位为"在 Kali 上真执行 skill"，补依赖/keys/授权说明；package.json 0.4.0→0.5.0。
+
+**离线验证跑法**（本次踩坑记牢）：harness 用 jiti 加载 `<agent>/index.ts` + mock pi 对象。**必须 `node --preserve-symlinks --preserve-symlinks-main`**——否则 node 把 `node_modules` 软链解析成 realpath 后找不到 typebox/pi-ai。preflight 用 `child_process` 真跑，离线也能测。
+
+<details><summary>历史（v0.4.0，2026-08-06）</summary>
+
+在 v0.2.0（拆两独立体 + 四项能力）、v0.3.0（代码清爽化 + 一键安装器）基础上，**把 817 技能库物理切分到两个产品**，两个产品都功能验证通过：
 - **技能物理切分**（v0.4.0）：原来是**一个共享 `cybersec-skills/`**、运行时按 subdomain 过滤；现在按 subdomain **物理分流**到 `wraith/skills`(447 红) 和 `aegis/skills`(370 蓝)，删除共享目录。**红队连磁盘上都不背蓝队技能**，启动也不再扫全部 817。切分干净（817=447+370，零 null-subdomain、零重叠）。每个 `skills/` 带一份 Apache 2.0 `LICENSE`+`NOTICE.md`。副作用：`SkillIndex` 去掉了 `subFilter`/`readSubdomain`/`teamFilter`/`BLUE_SUBDOMAINS`，引擎更简。
 - **代码清爽化**（v0.3.0）：每个产品从 ~900 行单文件拆成**三个专注文件**：`index.ts`(身份+记忆+命令) / `tools.ts`(工具+关键词映射+同义词) / `skill-index.ts`(检索引擎)。三份文件各自独立、零共享。
 - **命令精简**：`/list` 并入 `/arsenal`。命令 12→**11**。
 - **工具文案精简**：删冗余 `promptGuidelines`；**保留 `promptSnippet`**（pi 源码证实它决定工具在系统提示里的可见性，删了模型看不见）。
 - **一键安装器**：`install.sh` 精致化——品牌 banner、彩色输出、可 `curl \| sh` 远程自 clone、装两个独立产品、保持 pi 纯净。
+
+</details>
 
 关键定调（用户反复强调，避免再跑偏）：
 - **两个独立 agent = 两个独立产品，零共享代码**；明确**否掉**"抽共享 core/ 框架"。
@@ -58,12 +71,14 @@ git -C ~/Wraith pull           # 更新
 
 进 agent 后：`/engage <目标>`→`/next`→`/report`；记忆 `/log` `/loot`(红)|`/ioc`(蓝) `/evidence` `/reset`；技能 `/find <自然语言>` `/arsenal [词]`；`/help` `/phases`。
 
-**改代码后离线验证**（不真跑 pi、不耗 API）：软链 pi 内置 node_modules 进 `~/Wraith/node_modules`，用 jiti 加载 `<agent>/index.ts` + mock 一个 `pi` 对象调 `tool.execute`/`command.handler`。内置 modules 路径见 Handoff。
+**改代码后离线验证**（不真跑 pi、不耗 API）：软链 pi 内置 node_modules 进 `~/Wraith/node_modules`，用 jiti 加载 `<agent>/index.ts` + mock 一个 `pi` 对象调 `tool.execute`/`command.handler`。**跑 harness 必须带 `node --preserve-symlinks --preserve-symlinks-main`**，否则软链被解析成 realpath 后找不到 typebox/pi-ai。内置 modules 路径见 Handoff。
 
 ## Known Limits
 
-- 工具返回"工作流文本 + 真实命令"，真正执行靠 agent 用 bash——需人在场、给授权目标。
-- 效果依赖底层模型（当前 deepseek-v4-flash）。
+- 工具返回"skill 正文 + 预检 + EXECUTE 指令"，真正执行靠 agent 用 pi 内置 bash（复用 pi 权限门做安全阀）——需人在场、`/engage` 两步确认授权、目标须授权。
+- **执行通道刻意走 pi bash，不在工具里自建执行沙箱**（复用权限确认、危险命令有门、省超时/交互处理）。工具内只跑只读 `command -v` 预检。
+- 效果依赖底层模型（当前 deepseek-v4-flash）。模型越强，"读真实输出→决定下一步"越好。
+- preflight 只按 `COMMON_TOOLS` 精选清单匹配 skill 正文里的工具名——不在清单里的工具不会被检测（漏报，不影响执行）。
 - 两产品各写各的 `.wraith.json` / `.aegis.json`（在启动目录），互不冲突，已进 `.gitignore`。
 
 ## Handoff
@@ -73,5 +88,7 @@ git -C ~/Wraith pull           # 更新
 - **持久状态**：`.wraith.json`/`.aegis.json` 写在**启动 agent 的工作目录**。
 - **shell / 配置**：`~/.zshrc` 的 `# ── Wraith + Aegis ──` 块定义 `wraith`/`aegis` + `WRAITH_HOME`；独立配置在 `~/.pi-wraith` / `~/.pi-aegis`。
 - **认证**：deepseek key 在 `~/.pi/agent/auth.json`，两独立配置软链它。
+- **执行/预检/授权**：执行链在 `skill-index.ts` 的 `registerSkillTool`→`formatOutput`；预检在 `preflight()`/`extractTools()`/`COMMON_TOOLS`（加新工具名往这里加）；授权门在 `index.ts` 的 `/engage` 两步 + `State.authorized` + `memoryDigest`。
+- **可选依赖 / API key**：`<agent>/requirements.txt`（agent.py 回退依赖，从脚本 import 扫出）；`keys.env.example`→装到 `~/.wraith/keys.env`，shell 函数在子 shell 里 source 它。都可选，缺了 native 命令照跑。
 - **pi 内置 node_modules（离线验证用）**：`/opt/homebrew/Cellar/pi-coding-agent/<版本>/libexec/lib/node_modules/@earendil-works/pi-coding-agent/node_modules`（含 jiti/typebox/pi-ai）。
 - 搬新机器/Kali：`curl \| sh` 远程装（需仓库可访问），或拷 `~/Wraith` 整个文件夹跑 `./install.sh`。

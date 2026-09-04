@@ -1,6 +1,6 @@
 {
   "name": "wraith",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Wraith (red team) + Aegis (blue team) — two independent, self-contained cybersecurity agents for pi, with a one-command installer. Each ships its own persona, team-specific tools, and its own slice of the offline workflow library (447 offensive skills for Wraith, 370 defensive for Aegis; Nmap, Burp, sqlmap, Metasploit, BloodHound, Sliver, Volatility, Sigma, YARA, Splunk, ...). Built for Kali Linux.",
   "keywords": [
     "pi-package",
