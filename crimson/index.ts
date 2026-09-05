@@ -1,5 +1,5 @@
 /**
- * 🔴 WRAITH — autonomous red-team / offensive-security agent (self-contained pi extension).
+ * 🔴 CRIMSON KNIGHT — autonomous red-team / offensive-security agent (self-contained pi extension).
  *
  * This folder is ONE independent agent — no shared code with Aegis. Three files:
  *   index.ts       ← you are here: identity, engagement memory, commands, wiring
@@ -16,25 +16,23 @@ import { SkillIndex, registerSkillTool, w, W_PRIMARY, SKILLS_PATH } from "./skil
 import { TOOLS, SYNONYMS } from "./tools";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Identity — WRAITH, red team. 9-phase kill chain (MITRE ATT&CK aligned).
+// Identity — CRIMSON KNIGHT, red team. 9-phase kill chain (MITRE ATT&CK aligned).
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface Phase { id: string; name: string; brief: string; order: string; probe: string; }
 
-const NAME = "WRAITH";
-const THEME = "wraith";
+const NAME = "CRIMSON KNIGHT";
+const THEME = "crimson";
 const BANNER = [
-  "  ██     ██ ██████   █████  ██ ████████ ██   ██",
-  "  ██     ██ ██   ██ ██   ██ ██    ██    ██   ██",
-  "  ██  █  ██ ██████  ███████ ██    ██    ███████",
-  "  ██ ███ ██ ██   ██ ██   ██ ██    ██    ██   ██",
-  "   ███ ███  ██   ██ ██   ██ ██    ██    ██   ██",
-  "  RED TEAM · 9-phase kill chain · /engage <target>",
+  "   ⚔  C R I M S O N   K N I G H T  ⚔",
+  "  ─────────────────────────────────────────",
+  "  RED TEAM · offense · 9-phase kill chain",
+  "  /engage <target>",
 ];
 
 const PERSONA = `
 ═══════════════════════════════════════════════════════════════
-You are WRAITH, an autonomous red-team / penetration-testing agent.
+You are the CRIMSON KNIGHT, an autonomous red-team / penetration-testing agent of Frontier Knight Labs.
 
 [Identity]
 You are a senior offensive security expert (OSCP/OSEP level). You think like an attacker:
@@ -107,7 +105,7 @@ const PHASES: Phase[] = [
 interface Evidence { phase: string; note: string; }
 interface State { target: string; phase: number; authorized: boolean; evidence: Evidence[]; loot: string[]; }
 
-const STATE_FILE = join(process.cwd(), ".wraith.json");
+const STATE_FILE = join(process.cwd(), ".crimson.json");
 
 function loadState(): State {
   try {
@@ -153,7 +151,7 @@ export default function (pi: ExtensionAPI) {
   const refreshStatus = (ctx: any) => {
     if (!ctx.hasUI) return;
     const phase = state.phase >= 0 ? `Phase ${state.phase + 1}/${PHASES.length} · ${PHASES[state.phase].name}` : "idle";
-    ctx.ui.setStatus("wraith", `▓ ${NAME} ▓ ${phase} · ${state.target || "no target"}`);
+    ctx.ui.setStatus("crimson", `▓ ${NAME} ▓ ${phase} · ${state.target || "no target"}`);
   };
 
   const runPhase = (ctx: any) => {
@@ -174,7 +172,7 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setTheme?.(THEME);
     let i = 0;
     const reveal = () => {
-      ctx.ui.setWidget("wraith-banner", BANNER.slice(0, i));
+      ctx.ui.setWidget("crimson-banner", BANNER.slice(0, i));
       if (i < BANNER.length) { i++; setTimeout(reveal, 70); return; }
       refreshStatus(ctx);
       ctx.ui.notify(

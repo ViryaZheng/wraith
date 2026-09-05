@@ -1,9 +1,9 @@
 {
-  "name": "wraith",
+  "name": "crimson-knight",
   "version": "0.5.0",
-  "description": "Wraith 🔴 — a self-contained red-team / offensive-security agent for pi. OSCP-level attacker persona, 9-phase MITRE ATT&CK kill chain, 7 offensive tools, 447 offline attack workflows (Nmap, sqlmap, BloodHound, Impacket, Sliver, ...). Executes Kali-native tools. Part of Frontier Knight Labs.",
-  "keywords": ["pi-package","pi-extension","cybersecurity","red-team","pentest","kali","exploitation","mitre-attack"],
+  "description": "Crimson Knight 🔴 — the red-team / offensive-security agent of Frontier Knight Labs. Self-contained pi extension: OSCP-level attacker persona, 9-phase MITRE ATT&CK kill chain, 7 offensive tools, 447 offline attack workflows (Nmap, sqlmap, BloodHound, Impacket, Sliver, ...). Executes Kali-native tools.",
+  "keywords": ["pi-package","pi-extension","cybersecurity","red-team","pentest","kali","exploitation","mitre-attack","frontier-knight-labs"],
   "license": "MIT",
-  "pi": { "extensions": ["./wraith"], "themes": ["./themes"] },
+  "pi": { "extensions": ["./crimson"], "themes": ["./themes"] },
   "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-ai": "*", "typebox": "*" }
 }

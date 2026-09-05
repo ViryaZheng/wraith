@@ -1,5 +1,5 @@
 /**
- * WRAITH tools — the red team's offensive arsenal.
+ * CRIMSON KNIGHT tools — the red team's offensive arsenal.
  *
  * 7 tools, each mapping structured params → weighted keywords for skill retrieval,
  * plus the red synonym table. This product ships only red skills (./skills), so there

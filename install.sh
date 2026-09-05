@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Frontier Knight Labs — installer for one self-contained pi security agent.
-#  Auto-detects whether this checkout is 🔴 Wraith (offense) or 🔵 Aegis (defense).
+#  Auto-detects whether this checkout is 🔴 Crimson Knight (offense) or 🔵 Azure Knight (defense).
 #  Base pi stays untouched. Run with bash (not sh):  ./install.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 set -e
@@ -15,9 +15,9 @@ die()  { printf "  ${RED}✗${R} %s\n" "$1" >&2; exit 1; }
 
 # 1. Locate this checkout & detect which agent it is ─────────────────────────────
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
-if   [ -f "$SRC/wraith/index.ts" ]; then NAME=wraith; ICON="🔴"; TEAM="red team · offense";  ACCENT="$GRN"
-elif [ -f "$SRC/aegis/index.ts"  ]; then NAME=aegis;  ICON="🔵"; TEAM="blue team · defense"; ACCENT="$BLU"
-else die "run this from a wraith or aegis checkout (no $NAME/index.ts found)"; fi
+if   [ -f "$SRC/crimson/index.ts" ]; then NAME=crimson; ICON="🔴"; TEAM="red team · offense";  ACCENT="$GRN"
+elif [ -f "$SRC/azure/index.ts"  ]; then NAME=azure;  ICON="🔵"; TEAM="blue team · defense"; ACCENT="$BLU"
+else die "run this from a crimson or azure checkout (no $NAME/index.ts found)"; fi
 UP=$(printf '%s' "$NAME" | tr '[:lower:]' '[:upper:]')
 
 printf "\n  ${ACCENT}${B}%s  %s${R}  ${DIM}— a self-contained pi security agent · Frontier Knight Labs${R}\n\n" "$ICON" "$NAME"

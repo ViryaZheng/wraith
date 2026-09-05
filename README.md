@@ -1,31 +1,31 @@
 <div align="center">
 
-# WRAITH 🔴
+# Crimson Knight 🔴
 
-**A self-contained red-team / offensive-security agent for [pi](https://pi.dev).**
+**The red-team / offensive-security agent of [Frontier Knight Labs](https://github.com/frontierknight).**
 
 *OSCP-level attacker persona · 9-phase MITRE ATT&CK kill chain · executes Kali-native tools · offline · built for Kali.*
 
-A [Frontier Knight Labs](https://github.com/frontierknight) product · blue-team counterpart: [Aegis 🔵](https://github.com/frontierknight/aegis)
+Runs on [pi](https://pi.dev) · blue-team counterpart: [Azure Knight 🔵](https://github.com/frontierknight/azure) · proving ground: [Knightfall](https://github.com/frontierknight)
 
 </div>
 
 ---
 
-Wraith is an offensive-security agent: it selects the right workflow from a bundled library of **447 attack skills** (carved from the [Anthropic Cybersecurity Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills), Apache 2.0), checks the toolchain it needs, then **actually runs the Kali-native tools** (Nmap, sqlmap, BloodHound, Impacket, Sliver, …), reads the real output, and reasons forward — one phase at a time, at your pace. It runs as a pi extension and leaves plain `pi` untouched.
+Crimson Knight is an offensive-security agent: it selects the right workflow from a bundled library of **447 attack skills** (from the [Anthropic Cybersecurity Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills), Apache 2.0), checks the toolchain it needs, then **actually runs the Kali-native tools** (Nmap, sqlmap, BloodHound, Impacket, Sliver, …), reads the real output, and reasons forward — one phase at a time, at your pace. It runs as a pi extension and leaves plain `pi` untouched.
 
 ## Install
 
 Needs [pi](https://pi.dev) (Node ≥ 22) and a model configured in pi (`pi` once to sign in).
 
 ```bash
-git clone https://github.com/frontierknight/wraith ~/wraith
-cd ~/wraith && ./install.sh
+git clone https://github.com/frontierknight/crimson ~/crimson
+cd ~/crimson && ./install.sh
 source ~/.zshrc
-wraith
+crimson
 ```
 
-The installer sets up an isolated config, wires the `wraith` command, checks your Kali toolchain (prints `apt install` for anything missing), and drops an optional API-keys template at `~/.frontierknight/keys.env`. On Kali the offensive tools are mostly already there.
+The installer sets up an isolated config, wires the `crimson` command, checks your Kali toolchain (prints `apt install` for anything missing), and drops an optional API-keys template at `~/.frontierknight/keys.env`. On Kali the offensive tools are mostly already there.
 
 ## How it works — one phase at a time, you set the pace
 
@@ -53,7 +53,7 @@ Nothing runs against a target until you confirm authorization. Each phase then *
 | `/evidence` · `/reset` | Show the full engagement memory · clear it |
 | `/arsenal [kw]` · `/help` | Browse skills · how to use |
 
-Memory (target, phase, evidence chain, loot ledger) persists to `.wraith.json` in the working dir and survives restarts.
+Memory (target, phase, evidence chain, loot ledger) persists to `.crimson.json` in the working dir and survives restarts.
 
 ## Rules of engagement
 
